@@ -1,14 +1,14 @@
-Add: complete UNO-1 user interface controller, LCD, keypad, and I2C temperature configuration
+Add: UNO-2 environmental control logic with motor safety, sensors, and LCD feedback
 
-Implemented passcode double-entry system with LCD and 4x4 keypad.
-Added buzzer feedback and start button logic.
-Included temperature input (3-digit format) with Celsius/Fahrenheit display.
-Established I2C master communication to send preferred temperature to UNO-2.
-Functional testing successful on simulation
+Integrated PIR motion detection, TMP36 temperature sensing, ultrasonic safety stop, and night mode detection.
+Implemented DC motor control via L293D driver, buzzer alerts, and LCD status display.
+Added I2C slave receiver to update preferred temperature from UNO-1.
+Provided JSON-format serial output for Node-RED monitoring.
+Testing successful in simulation.
 
 Remaining:
-- Convert pin mapping for Arduino MEGA hardware
-- Add DHT11 sensor option instead of temperature input for real data
-- Prepare final Fritzing diagram of keypad, LCD, and I2C link
-- Include integration screenshots and Node-RED dashboard snapshot in final report
-- Also haven't checked password verification
+- Update pin mapping for Arduino MEGA setup
+- Add humidity reading using DHT11 (only had Temperature Sensor [TMP36])
+- Expand LED indicators or integrate 7-segment runtime display
+- Capture runtime/testing screenshots for demonstration
+- Export/noteDown circuit wiring
