@@ -1,11 +1,14 @@
- Add: Integration test - PIR motion + TMP36 temp + LCD display
+Add: complete UNO-1 user interface controller, LCD, keypad, and I2C temperature configuration
 
-- Integrated all three working components into single system
-- PIR motion sensor triggers detection alerts on LCD
-- TMP36 provides continuous temperature monitoring (C and F)
-- LCD displays real-time temperature and motion status
-- Serial monitor provides detailed system status updates
-- Motion detection shows count, duration, and temperature at detection
-- Display modes: READY ->MOTION ALERT -> ACTIVE -> QUIET
-- Debug messages 
-- All sensors work simultaneously without interference
+Implemented passcode double-entry system with LCD and 4x4 keypad.
+Added buzzer feedback and start button logic.
+Included temperature input (3-digit format) with Celsius/Fahrenheit display.
+Established I2C master communication to send preferred temperature to UNO-2.
+Functional testing successful on simulation
+
+Remaining:
+- Convert pin mapping for Arduino MEGA hardware
+- Add DHT11 sensor option instead of temperature input for real data
+- Prepare final Fritzing diagram of keypad, LCD, and I2C link
+- Include integration screenshots and Node-RED dashboard snapshot in final report
+- Also haven't checked password verification
