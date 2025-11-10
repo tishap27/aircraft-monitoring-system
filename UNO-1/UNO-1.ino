@@ -222,7 +222,7 @@ void verifyPasscodes() {
     // SUCCESS
     correctPasscode = passcode1;
     
-    Serial.println("✓ PASSCODE MATCH!");
+    Serial.println("PASSCODE MATCH!");
     Serial.print("Passcode: ");
     Serial.println(correctPasscode);
     
