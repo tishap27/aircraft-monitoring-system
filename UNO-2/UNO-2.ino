@@ -418,3 +418,8 @@ void sendStatus() {
   
   Serial.println("===================");
 }
+
+
+
+//uNO 1 ACTIVE BUZZER
+//UNO2 PASSIVE BUZZER
