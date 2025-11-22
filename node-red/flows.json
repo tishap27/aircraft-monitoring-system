@@ -1,0 +1,607 @@
+[
+    {
+        "id": "87ea2ad36bd91ca7",
+        "type": "tab",
+        "label": "Arduino Dashboard",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "6d6a0e43409040e6",
+        "type": "serial in",
+        "z": "87ea2ad36bd91ca7",
+        "name": "MEGA-1 (COM3)",
+        "serial": "8c4272f89eb5c115",
+        "x": 140,
+        "y": 180,
+        "wires": [
+            [
+                "ef9bd3a4d207e38c"
+            ]
+        ]
+    },
+    {
+        "id": "41dcd2d64f4f5a3b",
+        "type": "serial in",
+        "z": "87ea2ad36bd91ca7",
+        "name": "MEGA-2 (COM4)",
+        "serial": "b3f67b2d47d1ad2c",
+        "x": 140,
+        "y": 260,
+        "wires": [
+            [
+                "e720c0ccb3f47ebb"
+            ]
+        ]
+    },
+    {
+        "id": "ef9bd3a4d207e38c",
+        "type": "function",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Parse MEGA-1 Data",
+        "func": "var line = msg.payload.toString().trim();\n\n// Parse flight data line: Pitch: 12.3° | Roll: -3.5° | Yaw: 45.0° | Alt: 87.5cm | Gear: DOWN | Fan: ON\nif (line.includes('Pitch:') && line.includes('Roll:')) {\n    try {\n        var pitchMatch = line.match(/Pitch:\\s*([\\-\\d\\.]+)/); \n        var rollMatch = line.match(/Roll:\\s*([\\-\\d\\.]+)/);\n        var yawMatch = line.match(/Yaw:\\s*([\\-\\d\\.]+)/);\n        var altMatch = line.match(/Alt:\\s*([\\d\\.]+)/);\n        var gearMatch = line.match(/Gear:\\s*(\\w+)/);\n        var fanMatch = line.match(/Fan:\\s*(\\w+)/);\n        \n        var msgs = [];\n        \n        if (pitchMatch) {\n            msgs.push({payload: parseFloat(pitchMatch[1]), topic: 'pitch'});\n        }\n        if (rollMatch) {\n            msgs.push({payload: parseFloat(rollMatch[1]), topic: 'roll'});\n        }\n        if (yawMatch) {\n            msgs.push({payload: parseFloat(yawMatch[1]), topic: 'yaw'});\n        }\n        if (altMatch) {\n            msgs.push({payload: parseFloat(altMatch[1]), topic: 'altitude'});\n        }\n        if (gearMatch) {\n            msgs.push({payload: gearMatch[1], topic: 'gear'});\n        }\n        if (fanMatch) {\n            msgs.push({payload: fanMatch[1], topic: 'fan'});\n        }\n        \n        return [msgs];\n    } catch(e) {\n        node.warn('Parse error: ' + e);\n    }\n}\n\nreturn null;",
+        "outputs": 1,
+        "x": 360,
+        "y": 180,
+        "wires": [
+            [
+                "d10d1cefe5fd3b9c"
+            ]
+        ]
+    },
+    {
+        "id": "e720c0ccb3f47ebb",
+        "type": "function",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Parse MEGA-2 JSON",
+        "func": "var line = msg.payload.toString().trim();\n\n// Parse JSON line from MEGA-2\nif (line.includes('JSON:')) {\n    try {\n        var jsonStart = line.indexOf('{');\n        var jsonStr = line.substring(jsonStart);\n        var data = JSON.parse(jsonStr);\n        \n        return [\n            {payload: data.temp, topic: 'temperature'},\n            {payload: data.humidity, topic: 'humidity'},\n            {payload: data.motion, topic: 'motion'},\n            {payload: data.night, topic: 'night'},\n            {payload: data.gate, topic: 'gate'},\n            {payload: data.stepper, topic: 'stepper'}\n        ];\n    } catch(e) {\n        node.warn('JSON parse error: ' + e);\n    }\n}\n\nreturn null;",
+        "outputs": 6,
+        "x": 360,
+        "y": 260,
+        "wires": [
+            [
+                "808c6556fb22bc1d"
+            ],
+            [
+                "0a98734716784294"
+            ],
+            [
+                "4782070314ec689d"
+            ],
+            [
+                "a107d227073dddd2"
+            ],
+            [
+                "fe1da2a3ea76ee25"
+            ],
+            [
+                "43ac39387e4fd0e4"
+            ]
+        ]
+    },
+    {
+        "id": "d10d1cefe5fd3b9c",
+        "type": "switch",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Route by Topic",
+        "property": "topic",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "pitch",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "roll",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "yaw",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "altitude",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "gear",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "fan",
+                "vt": "str"
+            }
+        ],
+        "checkall": "false",
+        "repair": false,
+        "outputs": 6,
+        "x": 560,
+        "y": 180,
+        "wires": [
+            [
+                "0da37aea0ea0124a",
+                "1a8ebc2d77c01427"
+            ],
+            [
+                "0691bff035ec23ec",
+                "bb5c983c046448a3"
+            ],
+            [
+                "1d016ebaad744a86"
+            ],
+            [
+                "5e418784dee10639"
+            ],
+            [
+                "e8acc46e60655626"
+            ],
+            [
+                "1275bf721779961a"
+            ]
+        ]
+    },
+    {
+        "id": "0da37aea0ea0124a",
+        "type": "ui_gauge",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Pitch",
+        "group": "flight_data",
+        "order": 1,
+        "width": 4,
+        "height": 4,
+        "gtype": "gage",
+        "title": "Pitch (Nose Up/Down)",
+        "label": "degrees",
+        "format": "{{value | number:1}}°",
+        "min": -90,
+        "max": 90,
+        "colors": [
+            "#00ff41",
+            "#ffea00",
+            "#ff0040"
+        ],
+        "seg1": -30,
+        "seg2": 30,
+        "className": "dark-gauge",
+        "x": 780,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "0691bff035ec23ec",
+        "type": "ui_gauge",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Roll",
+        "group": "flight_data",
+        "order": 2,
+        "width": 4,
+        "height": 4,
+        "gtype": "gage",
+        "title": "Roll (Wing Tilt)",
+        "label": "degrees",
+        "format": "{{value | number:1}}°",
+        "min": -180,
+        "max": 180,
+        "colors": [
+            "#00ff41",
+            "#ffea00",
+            "#ff0040"
+        ],
+        "seg1": -45,
+        "seg2": 45,
+        "className": "dark-gauge",
+        "x": 780,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "1d016ebaad744a86",
+        "type": "ui_gauge",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Yaw",
+        "group": "flight_data",
+        "order": 3,
+        "width": 4,
+        "height": 4,
+        "gtype": "compass",
+        "title": "Yaw (Heading)",
+        "label": "degrees",
+        "format": "{{value | number:0}}°",
+        "min": -180,
+        "max": 180,
+        "colors": [
+            "#00d4ff",
+            "#00d4ff",
+            "#00d4ff"
+        ],
+        "seg1": 0,
+        "seg2": 0,
+        "className": "dark-gauge",
+        "x": 780,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "5e418784dee10639",
+        "type": "ui_text",
+        "z": "87ea2ad36bd91ca7",
+        "group": "flight_data",
+        "order": 4,
+        "width": 12,
+        "height": 2,
+        "name": "Altitude",
+        "label": "✈️ ALTITUDE",
+        "format": "{{msg.payload | number:1}} cm",
+        "layout": "row-center",
+        "className": "altitude-display",
+        "style": true,
+        "x": 780,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "e8acc46e60655626",
+        "type": "ui_text",
+        "z": "87ea2ad36bd91ca7",
+        "group": "system_status",
+        "order": 1,
+        "width": 3,
+        "height": 2,
+        "name": "Landing Gear",
+        "label": "🛬 GEAR",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "className": "status-text",
+        "style": true,
+        "x": 780,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "1275bf721779961a",
+        "type": "ui_text",
+        "z": "87ea2ad36bd91ca7",
+        "group": "system_status",
+        "order": 2,
+        "width": 3,
+        "height": 2,
+        "name": "Fan Status",
+        "label": "⚙️ FAN",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "className": "status-text",
+        "style": true,
+        "x": 780,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "808c6556fb22bc1d",
+        "type": "ui_gauge",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Temperature",
+        "group": "environment",
+        "order": 1,
+        "width": 6,
+        "height": 4,
+        "gtype": "gage",
+        "title": "🌡️ Temperature",
+        "label": "°C",
+        "format": "{{value | number:1}}",
+        "min": 0,
+        "max": 50,
+        "colors": [
+            "#00d4ff",
+            "#00ff41",
+            "#ff0040"
+        ],
+        "seg1": 20,
+        "seg2": 30,
+        "className": "dark-gauge",
+        "x": 780,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "0a98734716784294",
+        "type": "ui_gauge",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Humidity",
+        "group": "environment",
+        "order": 2,
+        "width": 6,
+        "height": 4,
+        "gtype": "gage",
+        "title": "💧 Humidity",
+        "label": "%",
+        "format": "{{value | number:0}}",
+        "min": 0,
+        "max": 100,
+        "colors": [
+            "#ff0040",
+            "#00ff41",
+            "#00d4ff"
+        ],
+        "seg1": 30,
+        "seg2": 70,
+        "className": "dark-gauge",
+        "x": 780,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "fe1da2a3ea76ee25",
+        "type": "ui_text",
+        "z": "87ea2ad36bd91ca7",
+        "group": "system_status",
+        "order": 3,
+        "width": 3,
+        "height": 2,
+        "name": "Gate Status",
+        "label": "🚪 GATE",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "className": "status-text",
+        "style": true,
+        "x": 780,
+        "y": 520,
+        "wires": []
+    },
+    {
+        "id": "4782070314ec689d",
+        "type": "ui_text",
+        "z": "87ea2ad36bd91ca7",
+        "group": "system_status",
+        "order": 4,
+        "width": 3,
+        "height": 2,
+        "name": "Motion Count",
+        "label": "👥 MOTION",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "className": "status-text",
+        "style": true,
+        "x": 780,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "a107d227073dddd2",
+        "type": "ui_text",
+        "z": "87ea2ad36bd91ca7",
+        "group": "system_status",
+        "order": 5,
+        "width": 3,
+        "height": 2,
+        "name": "Night Mode",
+        "label": "MODE",
+        "format": "{{msg.payload ? '🌙 NIGHT' : '☀️ DAY'}}",
+        "layout": "row-center",
+        "className": "status-text",
+        "style": true,
+        "x": 780,
+        "y": 640,
+        "wires": []
+    },
+    {
+        "id": "43ac39387e4fd0e4",
+        "type": "ui_gauge",
+        "z": "87ea2ad36bd91ca7",
+        "group": "system_status",
+        "order": 6,
+        "width": 12,
+        "height": 3,
+        "gtype": "donut",
+        "title": "🔄 Stepper Motor Position",
+        "label": "steps",
+        "format": "{{value}}",
+        "min": 0,
+        "max": 256,
+        "colors": [
+            "#00ff41",
+            "#ffea00",
+            "#ff0040"
+        ],
+        "seg1": 85,
+        "seg2": 170,
+        "className": "dark-gauge",
+        "x": 780,
+        "y": 700,
+        "wires": []
+    },
+    {
+        "id": "1a8ebc2d77c01427",
+        "type": "ui_chart",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Pitch History",
+        "group": "charts",
+        "order": 1,
+        "width": 12,
+        "height": 5,
+        "label": "Pitch Over Time",
+        "chartType": "line",
+        "legend": "false",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "Waiting for data...",
+        "dot": false,
+        "ymin": "-90",
+        "ymax": "90",
+        "removeOlder": 1,
+        "removeOlderPoints": "100",
+        "removeOlderUnit": "60",
+        "cutout": 0,
+        "useOneColor": false,
+        "useUTC": false,
+        "colors": [
+            "#00ff41"
+        ],
+        "outputs": 1,
+        "useDifferentColor": false,
+        "className": "dark-chart",
+        "x": 780,
+        "y": 820,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "bb5c983c046448a3",
+        "type": "ui_chart",
+        "z": "87ea2ad36bd91ca7",
+        "name": "Roll History",
+        "group": "charts",
+        "order": 2,
+        "width": 12,
+        "height": 5,
+        "label": "Roll Over Time",
+        "chartType": "line",
+        "legend": "false",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "Waiting for data...",
+        "dot": false,
+        "ymin": "-180",
+        "ymax": "180",
+        "removeOlder": 1,
+        "removeOlderPoints": "100",
+        "removeOlderUnit": "60",
+        "cutout": 0,
+        "useOneColor": false,
+        "useUTC": false,
+        "colors": [
+            "#00d4ff"
+        ],
+        "outputs": 1,
+        "useDifferentColor": false,
+        "className": "dark-chart",
+        "x": 780,
+        "y": 880,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "46fb9e7c741d2273",
+        "type": "ui_template",
+        "z": "87ea2ad36bd91ca7",
+        "group": "flight_data",
+        "name": "Dark Theme CSS",
+        "order": 99,
+        "width": 0,
+        "height": 0,
+        "format": "<style>\n    /* ========== DARK THEME BASE ========== */\n    body {\n        background: #0a0e27 !important;\n    }\n    \n    .nr-dashboard-theme md-content {\n        background: #0a0e27 !important;\n    }\n    \n    md-card {\n        background: linear-gradient(145deg, #1a1f3a, #0f1228) !important;\n        border: 1px solid #2d3561 !important;\n        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;\n        border-radius: 12px !important;\n    }\n    \n    md-card-title {\n        background: linear-gradient(135deg, #1a1f3a, #252b52) !important;\n        color: #00d4ff !important;\n        font-weight: bold !important;\n        border-bottom: 2px solid #00d4ff !important;\n        font-size: 1.1em !important;\n    }\n    \n    md-card-content {\n        background: #0f1228 !important;\n        color: #e0e0e0 !important;\n    }\n    \n    /* ========== ALTITUDE DISPLAY ========== */\n    .altitude-display {\n        font-size: 2.8em !important;\n        font-weight: bold !important;\n        color: #00ff41 !important;\n        text-shadow: 0 0 25px #00ff41, 0 0 50px #00ff41 !important;\n        background: linear-gradient(145deg, #1a3a1f, #0f2813) !important;\n        padding: 25px !important;\n        border-radius: 15px !important;\n        border: 3px solid #00ff41 !important;\n        animation: pulse 2s ease-in-out infinite !important;\n    }\n    \n    @keyframes pulse {\n        0%, 100% { box-shadow: 0 0 20px #00ff41; }\n        50% { box-shadow: 0 0 40px #00ff41, 0 0 60px #00ff41; }\n    }\n    \n    /* ========== STATUS TEXT ========== */\n    .status-text {\n        font-size: 2em !important;\n        font-weight: bold !important;\n        color: #00d4ff !important;\n        text-shadow: 0 0 15px #00d4ff !important;\n        background: linear-gradient(145deg, #1a2a3a, #0f1828) !important;\n        padding: 18px !important;\n        border-radius: 10px !important;\n        border: 2px solid #2d3561 !important;\n        transition: all 0.3s ease !important;\n    }\n    \n    .status-text:hover {\n        border-color: #00d4ff !important;\n        box-shadow: 0 0 20px rgba(0, 212, 255, 0.3) !important;\n    }\n    \n    /* ========== GAUGE STYLING ========== */\n    .dark-gauge text {\n        fill: #e0e0e0 !important;\n        font-weight: bold !important;\n        font-size: 1.1em !important;\n    }\n    \n    .dark-gauge .pointer {\n        stroke: #00ff41 !important;\n        stroke-width: 3px !important;\n    }\n    \n    /* ========== CHART STYLING ========== */\n    .dark-chart {\n        background: #0f1228 !important;\n    }\n    \n    .dark-chart svg {\n        background: #0f1228 !important;\n    }\n    \n    .dark-chart .ct-line {\n        stroke-width: 3px !important;\n    }\n    \n    .dark-chart .ct-grid {\n        stroke: #2d3561 !important;\n    }\n    \n    /* ========== TOOLBAR ========== */\n    md-toolbar {\n        background: linear-gradient(145deg, #1a1f3a, #0f1228) !important;\n        border-bottom: 3px solid #00d4ff !important;\n    }\n    \n    md-toolbar h1 {\n        color: #00d4ff !important;\n        text-shadow: 0 0 20px #00d4ff !important;\n        font-size: 1.8em !important;\n    }\n    \n    /* ========== LABELS ========== */\n    label {\n        color: #00d4ff !important;\n        font-weight: bold !important;\n        font-size: 1.05em !important;\n    }\n    \n    /* ========== SCROLLBAR ========== */\n    ::-webkit-scrollbar {\n        width: 14px;\n        background: #0a0e27;\n    }\n    \n    ::-webkit-scrollbar-thumb {\n        background: linear-gradient(180deg, #2d3561, #1a1f3a);\n        border-radius: 7px;\n        border: 2px solid #0a0e27;\n    }\n    \n    ::-webkit-scrollbar-thumb:hover {\n        background: #00d4ff;\n        box-shadow: 0 0 10px #00d4ff;\n    }\n    \n    /* ========== GRID LINES ========== */\n    md-content {\n        background: #0a0e27 !important;\n    }\n    \n    /* ========== GROUP HEADERS ========== */\n    .nr-dashboard-theme .md-headline {\n        color: #00d4ff !important;\n        text-shadow: 0 0 10px rgba(0, 212, 255, 0.5) !important;\n    }\n</style>",
+        "storeOutMessages": true,
+        "fwdInMessages": true,
+        "resendOnRefresh": true,
+        "templateScope": "global",
+        "className": "",
+        "x": 370,
+        "y": 940,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "8c4272f89eb5c115",
+        "type": "serial-port",
+        "serialport": "COM3",
+        "serialbaud": "9600",
+        "databits": "8",
+        "parity": "none",
+        "stopbits": "1",
+        "waitfor": "",
+        "dtr": "none",
+        "rts": "none",
+        "cts": "none",
+        "dsr": "none",
+        "newline": "\\n",
+        "bin": "false",
+        "out": "char",
+        "addchar": "",
+        "responsetimeout": "10000"
+    },
+    {
+        "id": "b3f67b2d47d1ad2c",
+        "type": "serial-port",
+        "serialport": "COM4",
+        "serialbaud": "9600",
+        "databits": "8",
+        "parity": "none",
+        "stopbits": "1",
+        "waitfor": "",
+        "dtr": "none",
+        "rts": "none",
+        "cts": "none",
+        "dsr": "none",
+        "newline": "\\n",
+        "bin": "false",
+        "out": "char",
+        "addchar": "",
+        "responsetimeout": "10000"
+    },
+    {
+        "id": "flight_data",
+        "type": "ui_group",
+        "name": "Flight Data",
+        "tab": "main_dashboard",
+        "order": 1,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "system_status",
+        "type": "ui_group",
+        "name": "System Status",
+        "tab": "main_dashboard",
+        "order": 3,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "environment",
+        "type": "ui_group",
+        "name": "Environment",
+        "tab": "main_dashboard",
+        "order": 2,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "charts",
+        "type": "ui_group",
+        "name": "Historical Data",
+        "tab": "main_dashboard",
+        "order": 4,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "main_dashboard",
+        "type": "ui_tab",
+        "name": "Arduino Mega Dashboard",
+        "icon": "dashboard",
+        "order": 1,
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "c8dc58b1b3d81a6c",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-node-serialport": "2.0.3",
+            "node-red-dashboard": "3.6.6"
+        }
+    }
+]
