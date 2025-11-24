@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-2: Ground Control Unit [STEPPER MOTOR]
+// MEGA-2: Ground Control Unit [STEPPER MOTOR + FAN CONTROL]
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -17,7 +17,7 @@ const int ULTRASONIC_TRIG = 24;
 const int ULTRASONIC_ECHO = 26;
 const int PHOTORESISTOR_PIN = A0;
 
-// Motor (L293D) - REMOVED FOR PLANE USE
+// Motor (L293D) - FAN CONTROL ON OBJECT DETECTION
 const int MOTOR_IN1 = 8;
 const int MOTOR_IN2 = 9;
 const int MOTOR_ENA = 10;
@@ -99,6 +99,7 @@ void setup() {
   pinMode(ULTRASONIC_ECHO, INPUT);
   pinMode(PHOTORESISTOR_PIN, INPUT);
 
+  // Initialize Motor Pins for FAN control
   pinMode(MOTOR_IN1, OUTPUT);
   pinMode(MOTOR_IN2, OUTPUT);
   pinMode(MOTOR_ENA, OUTPUT);
@@ -148,12 +149,10 @@ void loop() {
   checkMotion();
   readEnvironmentalData();
   
-  checkUltrasonicAndControlGate();  // Check ultrasonic and control gate
+  checkUltrasonicAndControlGate();  // Check ultrasonic and control gate + fan
   
-  controlMotor();
-  
-  // Stepper Motor Control (auto-rotate based on temperature)
-  controlStepperByTemperature();
+  // Stepper Motor Control - CONTINUOUS ROTATION (Scans all angles)
+  controlStepperContinuous();
 
   if (millis() - lastDisplayUpdate > 1000) {
     updateDisplay();
@@ -187,6 +186,9 @@ void openGate() {
   controlYellowLEDs(false);  // Turn off warning LEDs
   noTone(PASSIVE_BUZZER_PIN);
   
+  // STOP FAN when gate opens
+  stopFan();
+  
   lcd.setCursor(0, 1);
   lcd.print("Gate: OPEN");
   delay(500);
@@ -216,11 +218,55 @@ void closeGate() {
   gateIsClosed = true;
   detectionCount++;
   
+  // START FAN when gate closes
+  startFan();
+  
   delay(500);
 }
 
 // ============================================================================
-// ULTRASONIC DETECTION + GATE CONTROL
+// FAN CONTROL FUNCTIONS
+// ============================================================================
+
+void startFan() {
+  if (motorRunning) return;
+  
+  digitalWrite(MOTOR_IN1, HIGH);  // Forward direction
+  digitalWrite(MOTOR_IN2, LOW);
+  analogWrite(MOTOR_ENA, 255);    // Full speed
+  
+  motorRunning = true;
+  motorStartTime = millis();
+  
+  Serial.println(">>> FAN STARTED (OBJECT DETECTED) <<<");
+  
+  lcd.clear();
+  lcd.print("FAN: ON");
+  delay(500);
+}
+
+void stopFan() {
+  if (!motorRunning) return;
+  
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, LOW);
+  analogWrite(MOTOR_ENA, 0);
+  
+  motorRunning = false;
+  motorTotalTime = millis() - motorStartTime;
+  
+  Serial.println(">>> FAN STOPPED (OBJECT CLEARED) <<<");
+  Serial.print("Fan ran for: ");
+  Serial.print(motorTotalTime);
+  Serial.println(" ms");
+  
+  lcd.clear();
+  lcd.print("FAN: OFF");
+  delay(500);
+}
+
+// ============================================================================
+// ULTRASONIC DETECTION + GATE + FAN CONTROL
 // ============================================================================
 void checkUltrasonicAndControlGate() {
 
@@ -233,7 +279,7 @@ void checkUltrasonicAndControlGate() {
     // Object detected within 20cm
     objectDetected = (distance < 20 && distance > 2);
 
-    // Object just detected - CLOSE GATE
+    // Object just detected - CLOSE GATE + START FAN
     if (objectDetected && !previousState) {
       closeGate();
       
@@ -245,7 +291,7 @@ void checkUltrasonicAndControlGate() {
       lcd.print("cm");
     }
 
-    // Object cleared - OPEN GATE
+    // Object cleared - OPEN GATE + STOP FAN
     else if (!objectDetected && previousState) {
       delay(1000);  // Wait 1 second before opening
       openGate();
@@ -309,23 +355,15 @@ void stepperMotor(int steps, bool clockwise) {
   stepperRunning = false;
 }
 
-void controlStepperByTemperature() {
+void controlStepperContinuous() {
   static unsigned long lastRotation = 0;
 
-  if (stepperRunning || !tempReceived) return;
+  if (stepperRunning) return;
 
-  float tempDiff = currentTemp - preferredTemp;
-
-  if (millis() - lastRotation > 3000) {
-    
-    if (tempDiff > 2.0) {
-      stepperMotor(16, true);
-      lastRotation = millis();
-    }
-    else if (tempDiff < -2.0) {
-      stepperMotor(16, false);
-      lastRotation = millis();
-    }
+  // STEPPER CONTINUOUSLY ROTATES - SCANS ALL ANGLES (every 1.5 seconds)
+  if (millis() - lastRotation > 1500) {
+    stepperMotor(256, true);  // Rotate continuously (256 steps = full rotation)
+    lastRotation = millis();
   }
 }
 
@@ -421,15 +459,6 @@ void readEnvironmentalData() {
     currentTemp = 25.0;
     currentHumidity = 50.0;
   }
-}
-
-// ============================================================================
-// MOTOR CONTROL (L293D FAN - DISABLED FOR PLANE)
-// ============================================================================
-void controlMotor() {
-  // Motor control disabled - saved for plane propeller on MEGA-1
-  // Fan functionality removed to preserve motor for plane use
-  motorRunning = false;
 }
 
 // ============================================================================
@@ -541,6 +570,9 @@ void sendStatus() {
   Serial.print("Object Detections: ");
   Serial.println(detectionCount);
 
+  Serial.print("Fan Status: ");
+  Serial.println(motorRunning ? "RUNNING" : "STOPPED");
+
   Serial.print("Stepper: ");
   Serial.print(stepperRunning ? "MOVING" : "IDLE");
   Serial.print(" (Position: ");
@@ -550,7 +582,7 @@ void sendStatus() {
   Serial.print("Night Mode: ");
   Serial.println(nightMode ? "Active" : "Inactive");
 
-  if (objectDetected) Serial.println("⚠ ALERT: Object detected - Gate CLOSED!");
+  if (objectDetected) Serial.println("⚠ ALERT: Object detected - Gate CLOSED, Fan RUNNING!");
 
   Serial.print("⏱ Uptime: ");
   Serial.print(millis()/1000);
@@ -562,6 +594,8 @@ void sendStatus() {
   Serial.print(currentHumidity,0);
   Serial.print(",\"gate\":\"");
   Serial.print(gateIsClosed ? "CLOSED" : "OPEN");
+  Serial.print("\",\"fan\":\"");
+  Serial.print(motorRunning ? "RUNNING" : "STOPPED");
   Serial.print("\",\"detections\":");
   Serial.print(detectionCount);
   Serial.print(",\"stepper\":");
