@@ -44,8 +44,8 @@ bool fanRunning = false;
 // ========== LANDING GEAR (Standard Servo) ==========
 Servo landingGearServo;
 const int LANDING_GEAR_PIN = 27;
-const int GEAR_UP_ANGLE = 0;
-const int GEAR_DOWN_ANGLE = 90;
+const int GEAR_UP_ANGLE = 90;
+const int GEAR_DOWN_ANGLE = 180;
 bool gearDeployed = false;
 
 // ========== I2C ==========
