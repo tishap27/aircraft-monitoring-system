@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-1: MPU6050 +  MOTOR(FAN) + LANDING GEAR SERVO  [NOT TESTED YET]  
+// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [FIXED ULTRASONIC]
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -34,16 +34,18 @@ const int BUTTON_PIN = 18;
 // ========== ULTRASONIC SENSOR ==========
 const int ULTRASONIC_TRIG = 6;
 const int ULTRASONIC_ECHO = 7;
+float smoothedDistance = 999.0;
+const float DISTANCE_FILTER_ALPHA = 0.3;  // Smoothing factor (0-1, lower = smoother)
 
 // ========== FAN/PROPELLER (RELAY MODULE) ==========
-const int FAN_RELAY_PIN = 31;      // 5-pin relay for motor/fan
+const int FAN_RELAY_PIN = 31;
 bool fanRunning = false;
 
 // ========== LANDING GEAR (Standard Servo) ==========
 Servo landingGearServo;
-const int LANDING_GEAR_PIN = 27;   // Standard 180° servo for landing gear
-const int GEAR_UP_ANGLE = 0;       // Landing gear retracted (0°)
-const int GEAR_DOWN_ANGLE = 90;    // Landing gear deployed (90°)
+const int LANDING_GEAR_PIN = 27;
+const int GEAR_UP_ANGLE = 0;
+const int GEAR_DOWN_ANGLE = 90;
 bool gearDeployed = false;
 
 // ========== I2C ==========
@@ -51,6 +53,7 @@ float preferredTemp = 0.0;
 
 // ========== MPU6050 SENSOR ==========
 MPU6050 mpu;
+bool mpuAvailable = false;
 
 float pitch = 0;
 float roll = 0;
@@ -204,7 +207,7 @@ void showDigit(int digit, int position) {
 void startFan() {
   if (fanRunning) return;
   
-  digitalWrite(FAN_RELAY_PIN, HIGH);  // Activate relay
+  digitalWrite(FAN_RELAY_PIN, HIGH);
   fanRunning = true;
   
   Serial.println(">>> FAN STARTED (RELAY ON) <<<");
@@ -217,7 +220,7 @@ void startFan() {
 void stopFan() {
   if (!fanRunning) return;
   
-  digitalWrite(FAN_RELAY_PIN, LOW);   // Deactivate relay
+  digitalWrite(FAN_RELAY_PIN, LOW);
   fanRunning = false;
   
   Serial.println(">>> FAN STOPPED (RELAY OFF) <<<");
@@ -234,7 +237,7 @@ void stopFan() {
 // ============================================================================
 
 void deployLandingGear() {
-  if (gearDeployed) return;  // Already deployed
+  if (gearDeployed) return;
   
   Serial.println(">>> DEPLOYING LANDING GEAR <<<");
   
@@ -243,28 +246,26 @@ void deployLandingGear() {
   lcd.setCursor(0, 1);
   lcd.print("DEPLOYING...");
   
-  // Play gear deployment sound
   tone(PASSIVE_BUZZER_PIN, 600, 200);
   delay(250);
   tone(PASSIVE_BUZZER_PIN, 500, 200);
   delay(250);
   
-  // Smoothly deploy gear from 0° to 90°
   for (int angle = GEAR_UP_ANGLE; angle <= GEAR_DOWN_ANGLE; angle += 3) {
     landingGearServo.write(angle);
-    delay(20);  // Smooth motion
+    delay(20);
   }
   
   gearDeployed = true;
   
-  tone(PASSIVE_BUZZER_PIN, 800, 300);  // Confirmation beep
+  tone(PASSIVE_BUZZER_PIN, 800, 300);
   Serial.println(">>> LANDING GEAR DEPLOYED <<<");
   
   delay(500);
 }
 
 void retractLandingGear() {
-  if (!gearDeployed) return;  // Already retracted
+  if (!gearDeployed) return;
   
   Serial.println(">>> RETRACTING LANDING GEAR <<<");
   
@@ -273,39 +274,57 @@ void retractLandingGear() {
   lcd.setCursor(0, 1);
   lcd.print("RETRACTING...");
   
-  // Smoothly retract gear from 90° to 0°
   for (int angle = GEAR_DOWN_ANGLE; angle >= GEAR_UP_ANGLE; angle -= 3) {
     landingGearServo.write(angle);
-    delay(20);  // Smooth motion
+    delay(20);
   }
   
   gearDeployed = false;
   
-  tone(PASSIVE_BUZZER_PIN, 1000, 200);  // Confirmation beep
+  tone(PASSIVE_BUZZER_PIN, 1000, 200);
   Serial.println(">>> LANDING GEAR RETRACTED <<<");
   
   delay(500);
 }
 
 // ============================================================================
-// ULTRASONIC SENSOR FOR LANDING
+// ULTRASONIC SENSOR [FIXED VERSION]
 // ============================================================================
 
 float getUltrasonicDistance() {
+  // Clear trigger
   digitalWrite(ULTRASONIC_TRIG, LOW);
   delayMicroseconds(2);
+  
+  // Send 10us pulse
   digitalWrite(ULTRASONIC_TRIG, HIGH);
   delayMicroseconds(10);
   digitalWrite(ULTRASONIC_TRIG, LOW);
   
+  // Wait for echo with timeout (30ms = ~510cm max range)
   long duration = pulseIn(ULTRASONIC_ECHO, HIGH, 30000);
-  float distance = (duration * 0.0343) / 2;
+  
+  // If timeout (no echo received), return max distance
+  if (duration == 0) {
+    return 999.0;
+  }
+  
+  // Calculate distance in cm
+  // Speed of sound = 343 m/s = 0.0343 cm/µs
+  // Distance = (time * speed) / 2 (round trip)
+  float distance = (duration * 0.0343) / 2.0;
+  
+  // Filter out invalid readings
+  if (distance < 2.0 || distance > 400.0) {
+    return 999.0;
+  }
   
   return distance;
 }
 
 unsigned long lastUltrasonicCheck = 0;
 float lastDistance = 999;
+int groundedCount = 0;  // Require multiple readings to confirm grounded
 
 void checkLandingAltitude() {
   if (millis() - lastUltrasonicCheck < 200) {
@@ -313,24 +332,39 @@ void checkLandingAltitude() {
   }
   lastUltrasonicCheck = millis();
   
-  float distance = getUltrasonicDistance();
+  float rawDistance = getUltrasonicDistance();
   
-  // Valid reading
-  if (distance < 400 && distance > 2) {
-    lastDistance = distance;
+  // Only update if valid reading
+  if (rawDistance < 400 && rawDistance > 2) {
+    // Apply exponential smoothing filter
+    smoothedDistance = (DISTANCE_FILTER_ALPHA * rawDistance) + 
+                       ((1 - DISTANCE_FILTER_ALPHA) * smoothedDistance);
     
-    // DEPLOY LANDING GEAR when approaching ground (10cm)
-    if (distance <= 10 && !gearDeployed) {
-      deployLandingGear();
-    }
-    
-    // GROUNDED - Stop fan when touching ground
-    if (distance < 5) {
+    lastDistance = smoothedDistance;
+  } else {
+    // Keep last valid reading if sensor fails
+    Serial.println("Ultrasonic: Invalid reading");
+    return;
+  }
+  
+  // Use smoothed distance for all checks
+  float distance = lastDistance;
+  
+  // DEPLOY LANDING GEAR when approaching ground (15cm)
+  if (distance <= 15 && !gearDeployed) {
+    deployLandingGear();
+  }
+  
+  // GROUNDED - Stop fan when touching ground (require stable readings)
+  if (distance < 6) {
+    groundedCount++;
+    if (groundedCount >= 3) {  // 3 consecutive readings below 6cm
       Serial.println("!!! GROUNDED - STOPPING FAN !!!");
       
-      stopFan();  // Stop the fan motor
+      stopFan();
+      groundedCount = 0;
       
-      tone(PASSIVE_BUZZER_PIN, 1000, 500);  // Landing confirmation beep
+      tone(PASSIVE_BUZZER_PIN, 1000, 500);
       
       lcd.clear();
       lcd.print("LANDED!");
@@ -339,36 +373,38 @@ void checkLandingAltitude() {
       delay(1000);
       return;
     }
-    
-    // RETRACT GEAR when climbing above 20cm
-    if (distance > 20 && gearDeployed) {
-      retractLandingGear();
-    }
-    
-    // Low altitude warnings (no speed control - relay is ON/OFF only)
-    if (distance < 10) {
-      Serial.println("!!! PULL UP PULL UP !!!");
-      tone(PASSIVE_BUZZER_PIN, 800, 100);
-      delay(100);
-      tone(PASSIVE_BUZZER_PIN, 800, 100);
-      delay(100);
-    } else if (distance < 20) {
-      Serial.println("PULL UP PULL UP");
-      tone(PASSIVE_BUZZER_PIN, 700, 150);
-      delay(100);
-    } else if (distance < 30) {
-      Serial.println("RETARD 30");
-      tone(PASSIVE_BUZZER_PIN, 600, 200);
-      delay(100);
-    } else if (distance < 40) {
-      Serial.println("RETARD 40");
-      tone(PASSIVE_BUZZER_PIN, 500, 200);
-      delay(100);
-    } else if (distance < 50) {
-      Serial.print("Ground detected: ");
-      Serial.print(distance, 1);
-      Serial.println(" cm");
-    }
+  } else {
+    groundedCount = 0;  // Reset counter if not near ground
+  }
+  
+  // RETRACT GEAR when climbing above 25cm (with hysteresis)
+  if (distance > 25 && gearDeployed) {
+    retractLandingGear();
+  }
+  
+  // Altitude warnings
+  if (distance < 15) {
+    Serial.println("!!! PULL UP PULL UP !!!");
+    tone(PASSIVE_BUZZER_PIN, 800, 100);
+    delay(100);
+    tone(PASSIVE_BUZZER_PIN, 800, 100);
+    delay(100);
+  } else if (distance < 25) {
+    Serial.println("PULL UP");
+    tone(PASSIVE_BUZZER_PIN, 700, 150);
+    delay(100);
+  } else if (distance < 35) {
+    Serial.println("RETARD 30");
+    tone(PASSIVE_BUZZER_PIN, 600, 200);
+    delay(100);
+  } else if (distance < 45) {
+    Serial.println("RETARD 40");
+    tone(PASSIVE_BUZZER_PIN, 500, 200);
+    delay(100);
+  } else if (distance < 60) {
+    Serial.print("Ground detected: ");
+    Serial.print(distance, 1);
+    Serial.println(" cm");
   }
 }
 
@@ -389,7 +425,7 @@ enum SystemState {
 SystemState currentState = STATE_PASSCODE_FIRST;
 
 // ============================================================================
-// MPU6050 FUNCTIONS
+// MPU6050 FUNCTIONS [OPTIONAL - CONTINUES WITHOUT IT]
 // ============================================================================
 
 void initMPU6050() {
@@ -412,11 +448,16 @@ void initMPU6050() {
     calibrateMPU6050();
     
     Serial.println("Calibration complete!");
+    mpuAvailable = true;
     delay(1000);
   } else {
     Serial.println("MPU6050 connection failed!");
+    Serial.println("Continuing without flight control...");
     lcd.clear();
-    lcd.print("MPU6050 Error!");
+    lcd.print("MPU6050 Missing");
+    lcd.setCursor(0,1);
+    lcd.print("Continuing...");
+    mpuAvailable = false;
     delay(2000);
   }
 }
@@ -456,6 +497,8 @@ void calibrateMPU6050() {
 }
 
 void updateOrientation() {
+  if (!mpuAvailable) return;
+  
   int16_t ax, ay, az, gx, gy, gz;
   
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
@@ -494,6 +537,8 @@ void updateOrientation() {
 }
 
 void displayOrientation() {
+  if (!mpuAvailable) return;
+  
   Serial.print("Pitch: ");
   Serial.print(pitch, 1);
   Serial.print("° | Roll: ");
@@ -540,14 +585,12 @@ void setup() {
   
   pinMode(PASSIVE_BUZZER_PIN, OUTPUT);
   
-  // Fan relay pin
   pinMode(FAN_RELAY_PIN, OUTPUT);
-  digitalWrite(FAN_RELAY_PIN, LOW);  // Start with relay OFF
+  digitalWrite(FAN_RELAY_PIN, LOW);
   Serial.println("Fan relay initialized - OFF");
   
-  // Landing gear servo (standard 180°)
   landingGearServo.attach(LANDING_GEAR_PIN);
-  landingGearServo.write(GEAR_UP_ANGLE);  // Retracted
+  landingGearServo.write(GEAR_UP_ANGLE);
   gearDeployed = false;
   Serial.println("Landing gear initialized - UP");
 
@@ -733,10 +776,8 @@ void startSystem() {
   lcd.setCursor(0,1);
   lcd.print("Taking Off!");
   
-  // Start fan motor via relay
   startFan();
   
-  // Make sure landing gear is retracted for takeoff
   if (gearDeployed) {
     retractLandingGear();
   }
@@ -750,9 +791,8 @@ void startSystem() {
 }
 
 void handleRunningState() {
-  // Fan runs continuously (relay ON) until landed
-  
-  if (millis() - lastMPUUpdate >= MPU_UPDATE_INTERVAL) {
+  // MPU6050 updates (if available)
+  if (mpuAvailable && millis() - lastMPUUpdate >= MPU_UPDATE_INTERVAL) {
     updateOrientation();
     displayOrientation();
     handlePitchBuzzer(pitch);
@@ -767,7 +807,7 @@ void handleRunningState() {
   
   if (millis() - lastLCDUpdate >= 2000) {
     lcd.clear();
-    if (showPitchRoll) {
+    if (showPitchRoll && mpuAvailable) {
       lcd.print("P:");
       lcd.print(pitch, 1);
       lcd.print(" R:");
@@ -784,8 +824,8 @@ void handleRunningState() {
       lcd.setCursor(0,1);
       lcd.print("Fan:");
       lcd.print(fanRunning ? "ON" : "OFF");
-      lcd.print(" Y:");
-      lcd.print(yaw, 0);
+      lcd.print(" Alt:");
+      lcd.print(lastDistance, 0);
     }
     showPitchRoll = !showPitchRoll;
     lastLCDUpdate = millis();
@@ -819,140 +859,3 @@ void loop() {
       break;
   }
 }
-
-// ============================================================================
-// HARDWARE CONNECTIONS SUMMARY
-// ============================================================================
-/*
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    MEGA-1 HARDWARE CONNECTIONS                          │
-└─────────────────────────────────────────────────────────────────────────┘
-
-═══ FAN/PROPELLER (5-PIN RELAY MODULE) ═══
-Relay Signal Side (3 pins):
-  - VCC → MEGA-1 5V
-  - GND → MEGA-1 GND
-  - IN → Pin 31 (FAN_RELAY_PIN)
-
-Relay Power Side (2 screw terminals):
-  - "ONE" or "ON" → 5V power
-  - "OFF" or "COM" → Fan Motor RED wire (+)
-  
-Fan Motor:
-  - RED (+) → Relay COM terminal
-  - BLACK (-) → GND
-
-Note: Relay controls ON/OFF only (no speed control)
-
-═══ LANDING GEAR (Standard 180° Servo) ═══
-Pin 27 (LANDING_GEAR_PIN) → Servo Signal (Orange/Yellow)
-5V → Servo VCC (Red)
-GND → Servo GND (Brown/Black)
-Note: 0° = GEAR UP (retracted), 90° = GEAR DOWN (deployed)
-
-═══ MPU6050 (GY-521 Module) ═══
-Pin 20 (SDA) → MPU6050 SDA
-Pin 21 (SCL) → MPU6050 SCL
-5V or 3.3V → MPU6050 VCC
-GND → MPU6050 GND
-Note: Measures pitch, roll, yaw for flight control
-
-═══ ULTRASONIC SENSOR (HC-SR04) ═══
-Pin 6 (ULTRASONIC_TRIG) → TRIG
-Pin 7 (ULTRASONIC_ECHO) → ECHO
-5V → VCC
-GND → GND
-Note: Detects ground proximity for landing gear deployment
-
-═══ LCD 16x2 ═══
-Pin 12 → RS
-Pin 11 → Enable
-Pin 5 → D4
-Pin 4 → D5
-Pin 3 → D6
-Pin 2 → D7
-5V → VCC, Backlight+
-GND → GND, Backlight- (with 220Ω resistor)
-Potentiometer (10kΩ) → Contrast adjustment (V0)
-
-═══ 4x4 KEYPAD ═══
-Pins 39, 41, 43, 45 → Rows (R1-R4)
-Pins 47, 49, 51, 53 → Cols (C1-C4)
-
-═══ 7-SEGMENT DISPLAY (74HC595 Shift Register) ═══
-Pin 8 → Data (DS)
-Pin 10 → Clock (SH_CP)
-Pin 9 → Latch (ST_CP)
-Pins 23, 24, 25, 26 → Digit select (common cathode D1-D4)
-5V → VCC
-GND → GND
-
-═══ BUZZER ═══
-Pin 22 → Active Buzzer (+)
-Pin 13 → Passive Buzzer (+) [PWM for tones]
-GND → Both Buzzers (-)
-
-═══ BUTTON ═══
-Pin 18 → Button (uses internal pull-up resistor)
-GND → Button other terminal
-
-═══ I2C COMMUNICATION (MEGA-1 ↔ MEGA-2) ═══
-MEGA-1 Pin 20 (SDA) → MEGA-2 Pin 20 (SDA)
-MEGA-1 Pin 21 (SCL) → MEGA-2 Pin 21 (SCL)
-MEGA-1 GND → MEGA-2 GND (CRITICAL!)
-Note: MPU6050 shares same I2C bus (different address 0x68)
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         LANDING GEAR LOGIC                              │
-└─────────────────────────────────────────────────────────────────────────┘
-
-Altitude > 20cm  → Gear UP (retracted, 0°) + Fan ON
-Altitude ≤ 10cm  → Gear DOWN (deployed, 90°) + Warning beeps + Fan ON
-Altitude < 5cm   → LANDED - Stop fan (relay OFF) + Gear stays DOWN
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         FLIGHT WARNINGS                                 │
-└─────────────────────────────────────────────────────────────────────────┘
-
-< 50cm: "Ground detected"
-< 40cm: "RETARD 40" + beep
-< 30cm: "RETARD 30" + beep
-< 20cm: "PULL UP" + beep
-< 10cm: "PULL UP PULL UP" + DEPLOY GEAR + urgent beeps
-< 5cm:  "GROUNDED" + STOP FAN + Landing beep
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      POWER REQUIREMENTS                                 │
-└─────────────────────────────────────────────────────────────────────────┘
-
-Single servo (landing gear) can run on Arduino 5V
-Fan motor powered through relay (external or Arduino 5V)
-All GNDs must be connected together
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         PIN USAGE SUMMARY                               │
-└─────────────────────────────────────────────────────────────────────────┘
-
-Digital Pins Used:
-2, 3, 4, 5     - LCD data
-6, 7           - Ultrasonic
-8, 9, 10       - 7-segment shift register
-11, 12         - LCD control
-13             - Passive buzzer
-18             - Button
-20, 21         - I2C (MPU6050 + MEGA-2)
-22             - Active buzzer
-23, 24, 25, 26 - 7-segment digit select
-27             - Landing gear servo TODO
-31             - Fan relay TODO
-39, 41, 43, 45 - Keypad rows
-47, 49, 51, 53 - Keypad columns
-
-Analog Pins Used:
-None
-
-Available Pins:
-14, 15, 16, 17, 19, 28, 29, 30, 32-38, 40, 42, 44, 46, 48, 50, 52
-A0-A15 (all analog pins available)
-
-*/
