@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [FIXED ULTRASONIC]
+// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [FIXED ULTRASONIC] version1
 // ============================================================================
 #include <Wire.h>
 #include <LiquidCrystal.h>

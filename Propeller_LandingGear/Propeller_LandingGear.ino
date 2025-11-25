@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [FIXED ULTRASONIC]
+// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [L293D Motor Driver]
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -35,11 +35,14 @@ const int BUTTON_PIN = 18;
 const int ULTRASONIC_TRIG = 6;
 const int ULTRASONIC_ECHO = 7;
 float smoothedDistance = 999.0;
-const float DISTANCE_FILTER_ALPHA = 0.3;  // Smoothing factor (0-1, lower = smoother)
+const float DISTANCE_FILTER_ALPHA = 0.3;
 
-// ========== FAN/PROPELLER (RELAY MODULE) ==========
-const int FAN_RELAY_PIN = 31;
+// ========== L293D MOTOR DRIVER (FAN/PROPELLER) ==========
+const int MOTOR_IN1 = 28;  // L293D Input 1 (Direction A)
+const int MOTOR_IN2 = 29;  // L293D Input 2 (Direction B)
+const int MOTOR_EN = 30;   // L293D Enable (PWM for speed control)
 bool fanRunning = false;
+int fanSpeed = 255;        // 0-255 for PWM speed
 
 // ========== LANDING GEAR (Standard Servo) ==========
 Servo landingGearServo;
@@ -201,16 +204,21 @@ void showDigit(int digit, int position) {
 }
 
 // ============================================================================
-// FAN/PROPELLER CONTROL (RELAY)
+// FAN/PROPELLER CONTROL (L293D MOTOR DRIVER)
 // ============================================================================
 
 void startFan() {
   if (fanRunning) return;
   
-  digitalWrite(FAN_RELAY_PIN, HIGH);
-  fanRunning = true;
+  // Set direction: IN1 HIGH, IN2 LOW = forward rotation
+  digitalWrite(MOTOR_IN1, HIGH);
+  digitalWrite(MOTOR_IN2, LOW);
   
-  Serial.println(">>> FAN STARTED (RELAY ON) <<<");
+  // Enable motor with PWM for speed control
+  analogWrite(MOTOR_EN, fanSpeed);
+  
+  fanRunning = true;
+  Serial.println(">>> FAN STARTED (L293D MOTOR ON) <<<");
   
   lcd.clear();
   lcd.print("Fan: ON");
@@ -220,16 +228,31 @@ void startFan() {
 void stopFan() {
   if (!fanRunning) return;
   
-  digitalWrite(FAN_RELAY_PIN, LOW);
-  fanRunning = false;
+  // Disable motor (set speed to 0)
+  analogWrite(MOTOR_EN, 0);
   
-  Serial.println(">>> FAN STOPPED (RELAY OFF) <<<");
+  // Optional: Set both inputs to LOW for safety
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, LOW);
+  
+  fanRunning = false;
+  Serial.println(">>> FAN STOPPED (L293D MOTOR OFF) <<<");
   
   lcd.clear();
   lcd.print("Fan: OFF");
   lcd.setCursor(0, 1);
   lcd.print("LANDED!");
   delay(1000);
+}
+
+void setFanSpeed(int speed) {
+  if (speed < 0) speed = 0;
+  if (speed > 255) speed = 255;
+  
+  fanSpeed = speed;
+  if (fanRunning) {
+    analogWrite(MOTOR_EN, fanSpeed);
+  }
 }
 
 // ============================================================================
@@ -574,7 +597,7 @@ void displayOrientation() {
 void setup() {
   Serial.begin(9600);
   Wire.begin();
-  Serial.println("MEGA-1: Flight System + Landing Gear");
+  Serial.println("MEGA-1: Flight System + Landing Gear [L293D Motor]");
   
   lcd.begin(16, 2);
   pinMode(ACTIVE_BUZZER_PIN, OUTPUT);
@@ -585,9 +608,14 @@ void setup() {
   
   pinMode(PASSIVE_BUZZER_PIN, OUTPUT);
   
-  pinMode(FAN_RELAY_PIN, OUTPUT);
-  digitalWrite(FAN_RELAY_PIN, LOW);
-  Serial.println("Fan relay initialized - OFF");
+  // L293D Motor pins
+  pinMode(MOTOR_IN1, OUTPUT);
+  pinMode(MOTOR_IN2, OUTPUT);
+  pinMode(MOTOR_EN, OUTPUT);
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, LOW);
+  analogWrite(MOTOR_EN, 0);
+  Serial.println("L293D motor driver initialized - OFF");
   
   landingGearServo.attach(LANDING_GEAR_PIN);
   landingGearServo.write(GEAR_UP_ANGLE);
@@ -608,7 +636,7 @@ void setup() {
   lcd.clear();
   lcd.print("MEGA-1 System");
   lcd.setCursor(0, 1);
-  lcd.print("Fan + LandGear");
+  lcd.print("Motor + LandGear");
   delay(1500);
   
   initMPU6050();
