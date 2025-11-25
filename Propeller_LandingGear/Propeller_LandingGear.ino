@@ -92,7 +92,7 @@ const float NOSE_DOWN_THRESHOLD = -20.0;
 const float NOSE_UP_THRESHOLD = 20.0;
 const float STALL_WARNING_THRESHOLD = 40.0;
 
-void buzzNoseDown() {
+/*void buzzNoseDown() {
   tone(PASSIVE_BUZZER_PIN, 262, 300);
   delay(400);
 }
@@ -121,7 +121,23 @@ void buzzRoll() {
   tone(PASSIVE_BUZZER_PIN, 294, 80);
   delay(120);
 }
+*/
 
+void buzzNoseDown() {
+  tone(PASSIVE_BUZZER_PIN, 262, 200);  // Single short beep
+}
+
+void buzzNoseUp() {
+  tone(PASSIVE_BUZZER_PIN, 392, 200);  // Single higher beep
+}
+
+void buzzStallWarning() {
+  tone(PASSIVE_BUZZER_PIN, 800, 200);  // Urgent high beep
+}
+
+void buzzRoll() {
+  tone(PASSIVE_BUZZER_PIN, 330, 150);  // Medium beep
+}
 void handlePitchBuzzer(float currentPitch) {
   unsigned long now = millis();
   
