@@ -238,11 +238,13 @@ void stopFan() {
   fanRunning = false;
   Serial.println(">>> FAN STOPPED (L293D MOTOR OFF) <<<");
   
+  if(gearDeployed){
   lcd.clear();
   lcd.print("Fan: OFF");
   lcd.setCursor(0, 1);
   lcd.print("LANDED!");
   delay(1000);
+}
 }
 
 void setFanSpeed(int speed) {
@@ -283,7 +285,9 @@ void deployLandingGear() {
   
   tone(PASSIVE_BUZZER_PIN, 800, 300);
   Serial.println(">>> LANDING GEAR DEPLOYED <<<");
-  
+
+  // Stop fan when landing gear is deployed
+  stopFan();
   delay(500);
 }
 
@@ -307,6 +311,8 @@ void retractLandingGear() {
   tone(PASSIVE_BUZZER_PIN, 1000, 200);
   Serial.println(">>> LANDING GEAR RETRACTED <<<");
   
+  //start fan again 
+  startFan();
   delay(500);
 }
 
@@ -810,6 +816,7 @@ void startSystem() {
     retractLandingGear();
   }
   
+  startFan();
   tone(PASSIVE_BUZZER_PIN, 1000, 200);
   
   Wire.beginTransmission(8);
