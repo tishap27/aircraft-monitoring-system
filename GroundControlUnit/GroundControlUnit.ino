@@ -27,7 +27,7 @@ MFRC522 rfid(SS_PIN, RST_PIN);
 // Motor (L293D) - FAN CONTROL ON OBJECT DETECTION
 const int MOTOR_IN1 = 8;
 const int MOTOR_IN2 = 9;
-const int MOTOR_ENA = 10;
+const int MOTOR_ENA = 10; 
 
 // SERVO MOTOR (Gate/Barrier)
 const int SERVO_GATE_PIN = 44;
@@ -44,7 +44,9 @@ const int STEPPER_PIN4 = 37;
 
 // Passive Buzzer
 const int PASSIVE_BUZZER_PIN = 7;
-
+//LCD 
+bool showingStartupMessage = false;
+unsigned long startupMessageTime = 0;
 // LEDs
 const int YELLOW_LED_1 = 28;
 const int YELLOW_LED_2 = 30;
@@ -494,7 +496,6 @@ void receiveFromMega1(int bytes) {
     if (startSignal == 1) {
       Serial.println("✓ START SIGNAL CONFIRMED!");
       
-      // Read temperature (ONLY ONCE!)
       if (bytes == 5) {
         Wire.readBytes((char*)&preferredTemp, sizeof(float));
         Serial.print("✓ Temp: ");
@@ -503,9 +504,12 @@ void receiveFromMega1(int bytes) {
       }
      
       tempReceived = true;
-      systemStarted = true;  // Start the system!
+      systemStarted = true;
 
-      // Visual confirmation
+      // SET FLAG TO SHOW STARTUP MESSAGE
+      showingStartupMessage = true;
+      startupMessageTime = millis();
+
       lcd.clear();
       lcd.print("MEGA-1 Started!");
       lcd.setCursor(0,1);
@@ -513,13 +517,11 @@ void receiveFromMega1(int bytes) {
       lcd.print(preferredTemp, 1);
       lcd.print("C");
       
-      // Startup beeps
       tone(PASSIVE_BUZZER_PIN, 1000, 200);
       delay(300);
       tone(PASSIVE_BUZZER_PIN, 1200, 200);
       delay(300);
       
-      // Flash LEDs to confirm
       for (int i = 0; i < 3; i++) {
         controlYellowLEDs(true);
         delay(100);
@@ -527,11 +529,11 @@ void receiveFromMega1(int bytes) {
         delay(100);
       }
       
-      Serial.println("✓✓✓ MEGA-2 ACTIVATED! ✓✓✓");
-      delay(1000);
+      Serial.println(" MEGA-2 ACTIVATED!");
     }
   }
 }
+
 // ============================================================================
 // NIGHT MODE
 // ============================================================================
@@ -656,6 +658,15 @@ void controlRedLEDs(bool state) {
 // LCD DISPLAY
 // ============================================================================
 void updateDisplay() {
+
+  // IF SHOWING STARTUP MESSAGE, KEEP IT FOR 3 SECONDS
+  if (showingStartupMessage) {
+    if (millis() - startupMessageTime < 3000) {
+      return;  // Don't update display yet
+    } else {
+      showingStartupMessage = false;  // Time's up, resume normal display
+    }
+  }
 
   if (motionDetected && millis() - lastMotionTime < 1500)
     return;

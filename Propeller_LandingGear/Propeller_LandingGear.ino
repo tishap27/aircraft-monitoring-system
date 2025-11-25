@@ -1,6 +1,9 @@
 // ============================================================================
 // MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [L293D Motor Driver] MEGA 1
 // ============================================================================
+// ============================================================================
+// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [L293D Motor Driver] MEGA 1
+// ============================================================================
 
 #include <LiquidCrystal.h>
 #include <Keypad.h>
@@ -44,14 +47,18 @@ const int MOTOR_IN2 = 29;  // L293D Input 2 (Direction B)
 const int MOTOR_EN = 30;   // L293D Enable (PWM for speed control)
 bool fanRunning = false;
 int fanSpeed = 255;        // 0-255 for PWM speed
+
 //========== IRRemote ====================
 const int IR_RECEIVE_PIN = 15;
+
 // ========== LANDING GEAR (Standard Servo) ==========
 Servo landingGearServo;
 const int LANDING_GEAR_PIN = 27;
 const int GEAR_UP_ANGLE = 90;
 const int GEAR_DOWN_ANGLE = 180;
 bool gearDeployed = false;
+unsigned long gearDeployTime = 0;  // Track when gear was deployed
+const unsigned long MIN_GEAR_DOWN_TIME = 7000;  // 7 seconds minimum
 
 // ========== I2C ==========
 float preferredTemp = 0.0;
@@ -241,12 +248,12 @@ void stopFan() {
   Serial.println(">>> FAN STOPPED (L293D MOTOR OFF) <<<");
   
   if(gearDeployed){
-  lcd.clear();
-  lcd.print("Fan: OFF");
-  lcd.setCursor(0, 1);
-  lcd.print("LANDED!");
-  delay(1000);
-}
+    lcd.clear();
+    lcd.print("Fan: OFF");
+    lcd.setCursor(0, 1);
+    lcd.print("LANDED!");
+    delay(1000);
+  }
 }
 
 void setFanSpeed(int speed) {
@@ -284,6 +291,7 @@ void deployLandingGear() {
   }
   
   gearDeployed = true;
+  gearDeployTime = millis();  // Record deployment time
   
   tone(PASSIVE_BUZZER_PIN, 800, 300);
   Serial.println(">>> LANDING GEAR DEPLOYED <<<");
@@ -319,7 +327,7 @@ void retractLandingGear() {
 }
 
 // ============================================================================
-// ULTRASONIC SENSOR [FIXED VERSION]
+// ULTRASONIC SENSOR - UPDATED WITH 7-SECOND GEAR LOCK
 // ============================================================================
 
 float getUltrasonicDistance() {
@@ -341,8 +349,6 @@ float getUltrasonicDistance() {
   }
   
   // Calculate distance in cm
-  // Speed of sound = 343 m/s = 0.0343 cm/µs
-  // Distance = (time * speed) / 2 (round trip)
   float distance = (duration * 0.0343) / 2.0;
   
   // Filter out invalid readings
@@ -367,36 +373,29 @@ void checkLandingAltitude() {
   
   // Only update if valid reading
   if (rawDistance < 400 && rawDistance > 2) {
-    // Apply exponential smoothing filter
     smoothedDistance = (DISTANCE_FILTER_ALPHA * rawDistance) + 
                        ((1 - DISTANCE_FILTER_ALPHA) * smoothedDistance);
-    
     lastDistance = smoothedDistance;
   } else {
-    // Keep last valid reading if sensor fails
     Serial.println("Ultrasonic: Invalid reading");
     return;
   }
   
-  // Use smoothed distance for all checks
   float distance = lastDistance;
   
-  // DEPLOY LANDING GEAR when approaching ground (15cm)
+  // DEPLOY LANDING GEAR at 15cm
   if (distance <= 15 && !gearDeployed) {
     deployLandingGear();
   }
   
-  // GROUNDED - Stop fan when touching ground (require stable readings)
+  // GROUNDED - Stop fan when touching ground
   if (distance < 6) {
     groundedCount++;
-    if (groundedCount >= 3) {  // 3 consecutive readings below 6cm
+    if (groundedCount >= 3) {
       Serial.println("!!! GROUNDED - STOPPING FAN !!!");
-      
       stopFan();
       groundedCount = 0;
-      
       tone(PASSIVE_BUZZER_PIN, 1000, 500);
-      
       lcd.clear();
       lcd.print("LANDED!");
       lcd.setCursor(0, 1);
@@ -405,37 +404,29 @@ void checkLandingAltitude() {
       return;
     }
   } else {
-    groundedCount = 0;  // Reset counter if not near ground
+    groundedCount = 0;
   }
   
-  // RETRACT GEAR when climbing above 25cm (with hysteresis)
+  // RETRACT GEAR - Only if above 25cm AND 7 seconds have passed
   if (distance > 25 && gearDeployed) {
-    retractLandingGear();
+    if (millis() - gearDeployTime >= MIN_GEAR_DOWN_TIME) {
+      retractLandingGear();
+    } else {
+      Serial.println("Gear locked down - 7 sec minimum");
+    }
   }
   
-  // Altitude warnings
+  // ALTITUDE WARNINGS - Starting at 20cm
   if (distance < 15) {
     Serial.println("!!! PULL UP PULL UP !!!");
     tone(PASSIVE_BUZZER_PIN, 800, 100);
     delay(100);
     tone(PASSIVE_BUZZER_PIN, 800, 100);
     delay(100);
-  } else if (distance < 25) {
-    Serial.println("PULL UP");
-    tone(PASSIVE_BUZZER_PIN, 700, 150);
-    delay(100);
-  } else if (distance < 35) {
-    Serial.println("RETARD 30");
+  } else if (distance < 20) {
+    Serial.println("RETARD 20");
     tone(PASSIVE_BUZZER_PIN, 600, 200);
     delay(100);
-  } else if (distance < 45) {
-    Serial.println("RETARD 40");
-    tone(PASSIVE_BUZZER_PIN, 500, 200);
-    delay(100);
-  } else if (distance < 60) {
-    Serial.print("Ground detected: ");
-    Serial.print(distance, 1);
-    Serial.println(" cm");
   }
 }
 
@@ -799,9 +790,20 @@ void promptWaitingForStart() {
 }
 
 void handleWaitingForStart() {
-  if (digitalRead(BUTTON_PIN)==LOW) {
-    delay(50);
-    if (digitalRead(BUTTON_PIN)==LOW) startSystem();
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    delay(100);
+    if (digitalRead(BUTTON_PIN) == LOW) {
+      Serial.println("Button pressed");
+      Serial.print("systemStarted = ");
+      Serial.println(systemStarted ? "true" : "false");
+      if (systemStarted) {
+        Serial.println("Calling resetToPasscode()");
+        resetToPasscode();
+      } else {
+        Serial.println("Calling startSystem()");
+        startSystem();
+      }
+    }
   }
 }
 
@@ -819,7 +821,6 @@ void startSystem() {
     retractLandingGear();
   }
   
-  startFan();
   tone(PASSIVE_BUZZER_PIN, 1000, 200);
   
   Wire.beginTransmission(8);
@@ -872,6 +873,7 @@ void handleRunningState() {
   
   delay(10);
 }
+
 //======================================================================
 //RESET 
 //=================================================================
