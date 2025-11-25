@@ -42,6 +42,18 @@ const int STEPPER_PIN2 = 33;
 const int STEPPER_PIN3 = 35;
 const int STEPPER_PIN4 = 37;
 
+// ========== ROTARY ENCODER ==========
+const int ENCODER_CLK = 45;
+const int ENCODER_DT = 43;
+const int ENCODER_SW = 41;
+
+int lastCLK = HIGH;
+int currentAirspeed = 140;  // Default landing airspeed in knots
+const int TARGET_AIRSPEED = 100;  // Target to resolve conflict
+bool conflictActive = false;
+bool conflictResolved = false;
+
+
 // Passive Buzzer
 const int PASSIVE_BUZZER_PIN = 7;
 //LCD 
@@ -136,6 +148,12 @@ void setup() {
   pinMode(STEPPER_PIN2, OUTPUT);
   pinMode(STEPPER_PIN3, OUTPUT);
   pinMode(STEPPER_PIN4, OUTPUT);
+
+  // Initialize Rotary Encoder
+  pinMode(ENCODER_CLK, INPUT);
+  pinMode(ENCODER_DT, INPUT);
+  pinMode(ENCODER_SW, INPUT_PULLUP);
+  Serial.println("Rotary Encoder initialized");
   
   disableStepperMotor();
 
@@ -164,11 +182,12 @@ void setup() {
 void loop() {
   checkNightMode();
   checkMotion();
+  checkRotaryEncoder();
   readEnvironmentalData();
   
    // Only run main systems if MEGA-1 has started
   if (systemStarted) {
-    checkUltrasonicAndControlGate();
+   checkUltrasonicAndControlGate();
     controlStepperContinuous();
   }
   //checkUltrasonicAndControlGate();  // Check ultrasonic + RFID and control gate + fan
@@ -317,77 +336,118 @@ void playPlaneConflictAlarm() {
   }
   noTone(PASSIVE_BUZZER_PIN);
 }
+// ============================================================================
+// ROTARY ENCODER - AIRSPEED CONTROL
+// ============================================================================
+void checkRotaryEncoder() {
+  if (!conflictActive) return;  // Only work during conflict
+  
+  int currentCLK = digitalRead(ENCODER_CLK);
+  
+  // Check if CLK state changed (rotation detected)
+  if (currentCLK != lastCLK && currentCLK == LOW) {
+    int dtValue = digitalRead(ENCODER_DT);
+    
+    // Clockwise rotation = DECREASE airspeed
+    if (dtValue == HIGH) {
+      currentAirspeed -= 5;  // Decrease by 5 knots
+      if (currentAirspeed < 80) currentAirspeed = 80;  // Minimum speed
+      
+      Serial.print("Airspeed DECREASED to: ");
+      Serial.print(currentAirspeed);
+      Serial.println(" knots");
+      
+      tone(PASSIVE_BUZZER_PIN, 400, 50);  // Low beep
+    }
+    // Counter-clockwise = INCREASE airspeed
+    else {
+      currentAirspeed += 5;  // Increase by 5 knots
+      if (currentAirspeed > 160) currentAirspeed = 160;  // Maximum speed
+      
+      Serial.print("Airspeed INCREASED to: ");
+      Serial.print(currentAirspeed);
+      Serial.println(" knots");
+      
+      tone(PASSIVE_BUZZER_PIN, 600, 50);  // Higher beep
+    }
+    
+    // Check if conflict resolved
+    if (currentAirspeed <= TARGET_AIRSPEED && !conflictResolved) {
+      resolveConflict();
+    }
+  }
+  
+  lastCLK = currentCLK;
+  
+  // Check encoder button press (reset/confirm)
+  if (digitalRead(ENCODER_SW) == LOW) {
+    delay(50);  // Debounce
+    if (digitalRead(ENCODER_SW) == LOW) {
+      Serial.println("Encoder button pressed - Airspeed confirmed");
+      tone(PASSIVE_BUZZER_PIN, 1000, 200);
+      delay(300);
+    }
+  }
+}
 
+void resolveConflict() {
+  conflictResolved = true;
+  conflictActive = false;
+  
+  Serial.println("\n✓✓✓ CONFLICT RESOLVED! ✓✓✓");
+  Serial.print("Final Airspeed: ");
+  Serial.print(currentAirspeed);
+  Serial.println(" knots");
+  
+  // Success beeps
+  for (int i = 0; i < 3; i++) {
+    tone(PASSIVE_BUZZER_PIN, 1200, 100);
+    delay(150);
+  }
+  
+  // Turn off yellow LEDs
+  controlYellowLEDs(false);
+  
+  // Show success on LCD
+  lcd.clear();
+  lcd.print("CONFLICT CLEAR!");
+  lcd.setCursor(0, 1);
+  lcd.print("Speed: ");
+  lcd.print(currentAirspeed);
+  lcd.print(" kts");
+  delay(3000);
+}
 // ============================================================================
 // ULTRASONIC + RFID DETECTION + GATE + FAN CONTROL
 // ============================================================================
+// ============================================================================
+// ULTRASONIC + RFID DETECTION + GATE + FAN CONTROL (FIXED)
+// ============================================================================
 void checkUltrasonicAndControlGate() {
-
   if (millis() - lastSafetyCheck > 200) {
     lastSafetyCheck = millis();
-
+    
+    // ===== CHECK RFID INDEPENDENTLY (NOT tied to ultrasonic) =====
+    bool newRFIDDetected = checkRFIDTag();
+    bool previousPlaneState = planeDetected;
+    
+    if (newRFIDDetected && !previousPlaneState) {
+      planeDetected = true;  // PLANE DETECTED via RFID!
+      handlePlaneConflict();
+      return;  // Handle plane conflict immediately
+    }
+    
+    // ===== NOW CHECK ULTRASONIC for regular objects =====
     long distance = getUltrasonicDistance();
     bool previousObjectState = objectDetected;
-    bool previousPlaneState = planeDetected;
-
-    // Object detected within 20cm
+    
+    // Object detected within 20cm (but NOT a plane via RFID)
     objectDetected = (distance < 20 && distance > 2);
-
-    if (objectDetected) {
-      // Check if it's a PLANE (RFID tag detected)
-      planeDetected = checkRFIDTag();
-      
-      // ==========================================
-      // PLANE DETECTED (RFID TAG PRESENT)
-      // ==========================================
-      if (planeDetected && !previousPlaneState) {
-        planeConflictCount++;
-        
-        Serial.println("\n⚠⚠⚠ PLANE CONFLICT! ⚠⚠⚠");
-        Serial.println("Another plane incoming!");
-        
-        // URGENT ALARM
-        playPlaneConflictAlarm();
-        
-        // Flash ALL LEDs rapidly
-        for (int i = 0; i < 5; i++) {
-          controlYellowLEDs(true);
-          controlRedLEDs(true);
-          delay(100);
-          controlYellowLEDs(false);
-          controlRedLEDs(false);
-          delay(100);
-        }
-        
-        controlYellowLEDs(true);  // Keep yellow on
-        
-        // SHOW WARNING ON LCD
-        lcd.clear();
-        lcd.print("CONFLICT DETECT!");
-        lcd.setCursor(0, 1);
-        lcd.print("Another plane!");
-        delay(2000);
-        
-        lcd.clear();
-        lcd.print("REDUCE AIRSPEED");
-        lcd.setCursor(0, 1);
-        lcd.print("IMMEDIATELY!");
-        delay(2000);
-        
-        // GATE CLOSES (backward compatibility)
+    
+    if (objectDetected && !planeDetected) {
+      // Regular object (no RFID tag)
+      if (!previousObjectState) {
         closeGate();
-        
-        // FAN RUNS (backward compatibility)
-        startFan();
-      }
-      
-      // ==========================================
-      // REGULAR OBJECT (NO RFID TAG)
-      // ==========================================
-      else if (!planeDetected && !previousObjectState) {
-        // Normal object detection - works as before
-        closeGate();
-        
         lcd.clear();
         lcd.print("GATE CLOSED!");
         lcd.setCursor(0,1);
@@ -398,17 +458,12 @@ void checkUltrasonicAndControlGate() {
       }
     }
     
-    // ==========================================
-    // OBJECT CLEARED
-    // ==========================================
+    // Object cleared
     else if (!objectDetected && (previousObjectState || previousPlaneState)) {
       planeDetected = false;
-      
-      delay(1000);  // Wait 1 second
+      delay(1000);
       openGate();
-      
       controlYellowLEDs(false);
-      
       lcd.clear();
       lcd.print("Path Clear");
       lcd.setCursor(0,1);
@@ -416,6 +471,55 @@ void checkUltrasonicAndControlGate() {
       delay(1000);
     }
   }
+}
+
+// ===== NEW FUNCTION: Handle plane conflict =====
+void handlePlaneConflict() {
+  planeConflictCount++;
+  conflictActive = true;
+  conflictResolved = false;
+  currentAirspeed = 140;
+  
+  Serial.println("\n🛩 PLANE CONFLICT!!!!");
+  Serial.println("Another plane incoming!");
+  Serial.print("Current Airspeed: ");
+  Serial.print(currentAirspeed);
+  Serial.println(" knots");
+  Serial.print("Target Airspeed: ");
+  Serial.print(TARGET_AIRSPEED);
+  Serial.println(" knots or below");
+  
+  playPlaneConflictAlarm();
+  
+  // Flash ALL LEDs rapidly
+  for (int i = 0; i < 5; i++) {
+    controlYellowLEDs(true);
+    controlRedLEDs(true);
+    delay(100);
+    controlYellowLEDs(false);
+    controlRedLEDs(false);
+    delay(100);
+  }
+  controlYellowLEDs(true);
+  
+  lcd.clear();
+  lcd.print("CONFLICT DETECT!");
+  lcd.setCursor(0, 1);
+  lcd.print("Speed: ");
+  lcd.print(currentAirspeed);
+  lcd.print(" kts!");
+  delay(2000);
+  
+  lcd.clear();
+  lcd.print("REDUCE AIRSPEED");
+  lcd.setCursor(0, 1);
+  lcd.print("Target: ");
+  lcd.print(TARGET_AIRSPEED);
+  lcd.print(" kts");
+  delay(2000);
+  
+  closeGate();
+  startFan();
 }
 
 // ============================================================================
@@ -673,6 +777,19 @@ void updateDisplay() {
 
   lcd.clear();
   lcd.setCursor(0,0);
+
+   // Show airspeed during active conflict
+  if (conflictActive) {
+    lcd.print("AIRSPEED:");
+    lcd.print(currentAirspeed);
+    lcd.print("kts");
+    lcd.setCursor(0,1);
+    lcd.print("Target:");
+    lcd.print(TARGET_AIRSPEED);
+    lcd.print(" ROTATE!");
+    return;
+  }
+  
   lcd.print("T:");
   lcd.print(currentTemp,1);
   lcd.print("C H:");
