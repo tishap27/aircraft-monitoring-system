@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [L293D Motor Driver]
+// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [L293D Motor Driver] MEGA 1
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -820,6 +820,7 @@ void startSystem() {
   tone(PASSIVE_BUZZER_PIN, 1000, 200);
   
   Wire.beginTransmission(8);
+  Wire.write(1); 
   Wire.write((byte*)&preferredTemp, sizeof(preferredTemp));
   Wire.endTransmission();
   delay(1500);

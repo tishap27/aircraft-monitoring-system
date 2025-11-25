@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-2: Ground Control Unit [STEPPER + FAN + RFID PLANE DETECTION]
+// MEGA-2: Ground Control Unit [STEPPER + FAN + RFID PLANE DETECTION] MEGA 2
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -66,6 +66,7 @@ float currentTemp = 0.0;
 float currentHumidity = 0.0;
 
 bool tempReceived = false;
+bool systemStarted = false;
 
 bool motionDetected = false;
 bool lastPirState = LOW;
@@ -163,10 +164,15 @@ void loop() {
   checkMotion();
   readEnvironmentalData();
   
-  checkUltrasonicAndControlGate();  // Check ultrasonic + RFID and control gate + fan
+   // Only run main systems if MEGA-1 has started
+  if (systemStarted) {
+    checkUltrasonicAndControlGate();
+    controlStepperContinuous();
+  }
+  //checkUltrasonicAndControlGate();  // Check ultrasonic + RFID and control gate + fan
   
   // Stepper Motor Control - CONTINUOUS ROTATION
-  controlStepperContinuous();
+  //controlStepperContinuous();
 
   if (millis() - lastDisplayUpdate > 1000) {
     updateDisplay();
@@ -476,20 +482,56 @@ void controlStepperContinuous() {
 // RECEIVE FROM MEGA-1 (PREFERRED TEMP)
 // ============================================================================
 void receiveFromMega1(int bytes) {
-  if (bytes == sizeof(float)) {
-    Wire.readBytes((char*)&preferredTemp, sizeof(float));
-    tempReceived = true;
+  Serial.println("\n>>> I2C DATA RECEIVED! <<<");
+  Serial.print("Bytes: ");
+  Serial.println(bytes);
+  
+  if (bytes >= 1) {
+    byte startSignal = Wire.read();
+    Serial.print("Signal: ");
+    Serial.println(startSignal);
+    
+    if (startSignal == 1) {
+      Serial.println("✓ START SIGNAL CONFIRMED!");
+      
+      // Read temperature (ONLY ONCE!)
+      if (bytes == 5) {
+        Wire.readBytes((char*)&preferredTemp, sizeof(float));
+        Serial.print("✓ Temp: ");
+        Serial.print(preferredTemp, 1);
+        Serial.println("°C");
+      }
+     
+      tempReceived = true;
+      systemStarted = true;  // Start the system!
 
-    lcd.clear();
-    lcd.print("Config OK");
-    lcd.setCursor(0,1);
-    lcd.print("Temp ");
-    lcd.print(preferredTemp,1);
-    lcd.print("C");
-    delay(1500);
+      // Visual confirmation
+      lcd.clear();
+      lcd.print("MEGA-1 Started!");
+      lcd.setCursor(0,1);
+      lcd.print("Temp ");
+      lcd.print(preferredTemp, 1);
+      lcd.print("C");
+      
+      // Startup beeps
+      tone(PASSIVE_BUZZER_PIN, 1000, 200);
+      delay(300);
+      tone(PASSIVE_BUZZER_PIN, 1200, 200);
+      delay(300);
+      
+      // Flash LEDs to confirm
+      for (int i = 0; i < 3; i++) {
+        controlYellowLEDs(true);
+        delay(100);
+        controlYellowLEDs(false);
+        delay(100);
+      }
+      
+      Serial.println("✓✓✓ MEGA-2 ACTIVATED! ✓✓✓");
+      delay(1000);
+    }
   }
 }
-
 // ============================================================================
 // NIGHT MODE
 // ============================================================================
@@ -697,7 +739,7 @@ void sendStatus() {
   if (planeDetected) Serial.println("⚠⚠⚠ PLANE CONFLICT DETECTED!");
   else if (objectDetected) Serial.println("⚠ Object detected - Gate CLOSED, Fan RUNNING");
 
-  Serial.print("⏱ Uptime: ");
+  Serial.print("Uptime: ");
   Serial.print(millis()/1000);
   Serial.println("s");
 
