@@ -7,6 +7,7 @@
 #include <Wire.h>
 #include <MPU6050.h>
 #include <Servo.h>
+#include <IRremote.h>
 
 // ========== LCD ==========
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
@@ -43,7 +44,8 @@ const int MOTOR_IN2 = 29;  // L293D Input 2 (Direction B)
 const int MOTOR_EN = 30;   // L293D Enable (PWM for speed control)
 bool fanRunning = false;
 int fanSpeed = 255;        // 0-255 for PWM speed
-
+//========== IRRemote ====================
+const int IR_RECEIVE_PIN = 15;
 // ========== LANDING GEAR (Standard Servo) ==========
 Servo landingGearServo;
 const int LANDING_GEAR_PIN = 27;
@@ -603,6 +605,7 @@ void displayOrientation() {
 void setup() {
   Serial.begin(9600);
   Wire.begin();
+  IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
   Serial.println("MEGA-1: Flight System + Landing Gear [L293D Motor]");
   
   lcd.begin(16, 2);
@@ -869,11 +872,53 @@ void handleRunningState() {
   
   delay(10);
 }
+//======================================================================
+//RESET 
+//=================================================================
+void resetToPasscode() {
+  stopFan();
+  landingGearServo.write(GEAR_UP_ANGLE);
+  gearDeployed = false;
+
+  passcode1 = "";
+  passcode2 = "";
+  correctPasscode = "";
+  tempInput = "";
+  systemStarted = false;
+  preferredTemp = 0.0;
+  smoothedDistance = 999.0;
+  lastDistance = 999.0;
+  groundedCount = 0;
+  pitch = roll = yaw = 0;
+  pitch_filtered = roll_filtered = yaw_filtered = 0;
+
+  currentState = STATE_PASSCODE_FIRST;
+  lcd.clear();
+  lcd.print("System RESET");
+  lcd.setCursor(0,1);
+  lcd.print("POWER pressed");
+  delay(1000);
+
+  promptFirstPasscode();
+}
 
 // ============================================================================
 // MAIN LOOP
 // ============================================================================
 void loop() {
+
+  // Check for IR signals regardless of state
+  if (IrReceiver.decode()) {
+    uint8_t cmd = IrReceiver.decodedIRData.command;
+
+    if (cmd == 0x45) {  // POWER button code
+      resetToPasscode();
+      IrReceiver.resume();
+      return;  // Skip rest of loop to avoid conflict
+    }
+    IrReceiver.resume();
+  }
+
   switch(currentState) {
     case STATE_PASSCODE_FIRST:
       handleFirstPasscode();
