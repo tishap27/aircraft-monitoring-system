@@ -6,9 +6,9 @@
 #include <SPI.h>
 
 // Try different pin configurations
-#define MAX7219_CLK_PIN  47
-#define MAX7219_CS_PIN   46
-#define MAX7219_DIN_PIN  39
+#define MAX7219_CLK_PIN  29
+#define MAX7219_CS_PIN   27
+#define MAX7219_DIN_PIN  25
 
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
 #define MAX_DEVICES 1

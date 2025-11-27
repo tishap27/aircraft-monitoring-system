@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-2: Ground Control Unit + MAX7219 RUNWAY LIGHTS
+// MEGA-2: Ground Control Unit + DUAL MAX7219 RUNWAY LIGHTS (SYNCHRONIZED)
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -13,14 +13,20 @@
 // ===== PIN DEFINITIONS =====
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
-// MAX7219 Runway Lights
+// MAX7219 Runway Lights (Two modules for extended runway)
 #define MAX7219_CLK_PIN  47
 #define MAX7219_CS_PIN   46
 #define MAX7219_DIN_PIN  39
+
+#define MAX2_DIN_PIN  25
+#define MAX2_CS_PIN   27
+#define MAX2_CLK_PIN  29
+
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
 #define MAX_DEVICES 1
 
 MD_MAX72XX runwayLights = MD_MAX72XX(HARDWARE_TYPE, MAX7219_DIN_PIN, MAX7219_CLK_PIN, MAX7219_CS_PIN, MAX_DEVICES);
+MD_MAX72XX runwayLights2 = MD_MAX72XX(HARDWARE_TYPE, MAX2_DIN_PIN, MAX2_CLK_PIN, MAX2_CS_PIN, MAX_DEVICES);
 
 #define DHT_PIN 22
 #define DHT_TYPE DHT11
@@ -131,16 +137,23 @@ void setup() {
   Wire.begin(8);
   Wire.onReceive(receiveFromMega1);
 
-  // Initialize MAX7219 Runway Lights
-  Serial.println("Initializing MAX7219 Runway Lights...");
+  // Initialize BOTH MAX7219 Runway Lights
+  Serial.println("Initializing MAX7219 Runway Lights (Module 1)...");
   runwayLights.begin();
   runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
   runwayLights.clear();
+  Serial.println("✓ Module 1 Ready!");
   
-  // Startup animation
+  Serial.println("Initializing MAX7219 Runway Lights (Module 2)...");
+  runwayLights2.begin();
+  runwayLights2.control(MD_MAX72XX::INTENSITY, runwayBrightness);
+  runwayLights2.clear();
+  Serial.println("✓ Module 2 Ready!");
+  
+  // Synchronized startup animation
   runwayStartupAnimation();
   
-  Serial.println("✓ MAX7219 Runway Lights Ready!");
+  Serial.println("✓ DUAL MAX7219 Runway System Ready!");
 
   // Initialize RFID
   SPI.begin();
@@ -188,9 +201,9 @@ void setup() {
   }
 
   lcd.clear();
-  lcd.print("MEGA-2 RUNWAY");
+  lcd.print("MEGA-2 DUAL");
   lcd.setCursor(0, 1);
-  lcd.print("Control Ready!");
+  lcd.print("Runway Ready!");
   delay(1500);
 
   lcd.clear();
@@ -213,7 +226,7 @@ void loop() {
     controlStepperContinuous();
   }
 
-  // Update runway lights based on status
+  // Update BOTH runway lights with synchronized patterns
   updateRunwayLights();
 
   if (millis() - lastDisplayUpdate > 1000) {
@@ -228,31 +241,36 @@ void loop() {
 }
 
 // ============================================================================
-// MAX7219 RUNWAY LIGHT FUNCTIONS
+// MAX7219 DUAL RUNWAY LIGHT FUNCTIONS (SYNCHRONIZED)
 // ============================================================================
 
 void runwayStartupAnimation() {
-  // Sweep from left to right
+  // Synchronized sweep from left to right on BOTH modules
   for (int col = 0; col < 8; col++) {
     runwayLights.clear();
+    runwayLights2.clear();
     for (int row = 0; row < 8; row++) {
       runwayLights.setPoint(row, col, true);
+      runwayLights2.setPoint(row, col, true);
     }
     delay(80);
   }
   
-  // Flash all
+  // Synchronized flash all on BOTH modules
   for (int i = 0; i < 3; i++) {
     runwayLights.clear();
+    runwayLights2.clear();
     delay(100);
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 8; col++) {
         runwayLights.setPoint(row, col, true);
+        runwayLights2.setPoint(row, col, true);
       }
     }
     delay(100);
   }
   runwayLights.clear();
+  runwayLights2.clear();
 }
 
 void updateRunwayLights() {
@@ -268,7 +286,7 @@ void updateRunwayLights() {
   if (millis() - lastRunwayUpdate < updateInterval) return;
   lastRunwayUpdate = millis();
   
-  // Choose pattern based on state
+  // Choose pattern based on state - BOTH modules show same pattern
   if (conflictActive) {
     runwayConflictPattern();
   } else if (planeDetected) {
@@ -285,38 +303,44 @@ void updateRunwayLights() {
   if (runwayAnimFrame > 7) runwayAnimFrame = 0;
 }
 
-// RUNWAY PATTERN: Clear for landing (smooth scroll)
+// RUNWAY PATTERN: Clear for landing (smooth scroll) - SYNCHRONIZED
 void runwayClearPattern() {
   runwayLights.clear();
+  runwayLights2.clear();
   
   // Create scrolling centerline lights
   int offset = runwayAnimFrame;
   
-  // Center column lights (runway centerline)
+  // Apply to BOTH modules simultaneously
   for (int row = 0; row < 8; row++) {
+    // Center column lights (runway centerline)
     if ((row + offset) % 2 == 0) {
       runwayLights.setPoint(row, 3, true);
       runwayLights.setPoint(row, 4, true);
+      runwayLights2.setPoint(row, 3, true);
+      runwayLights2.setPoint(row, 4, true);
     }
-  }
-  
-  // Edge lights (runway edges)
-  for (int row = 0; row < 8; row++) {
+    
+    // Edge lights (runway edges)
     runwayLights.setPoint(row, 0, true);
     runwayLights.setPoint(row, 7, true);
+    runwayLights2.setPoint(row, 0, true);
+    runwayLights2.setPoint(row, 7, true);
   }
 }
 
-// RUNWAY PATTERN: Warning (alternating sides)
+// RUNWAY PATTERN: Warning (alternating sides) - SYNCHRONIZED
 void runwayWarningPattern() {
   runwayLights.clear();
+  runwayLights2.clear();
   
-  // Alternating left-right warning
+  // Alternating left-right warning on BOTH modules
   if (runwayAnimFrame % 2 == 0) {
     // Light up left side
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 4; col++) {
         runwayLights.setPoint(row, col, true);
+        runwayLights2.setPoint(row, col, true);
       }
     }
   } else {
@@ -324,56 +348,68 @@ void runwayWarningPattern() {
     for (int row = 0; row < 8; row++) {
       for (int col = 4; col < 8; col++) {
         runwayLights.setPoint(row, col, true);
+        runwayLights2.setPoint(row, col, true);
       }
     }
   }
 }
 
-// RUNWAY PATTERN: Blocked (X pattern)
+// RUNWAY PATTERN: Blocked (X pattern) - SYNCHRONIZED
 void runwayBlockedPattern() {
   runwayLights.clear();
+  runwayLights2.clear();
   
   if (runwayAnimFrame % 2 == 0) {
-    // Draw X pattern
+    // Draw X pattern on BOTH modules
     for (int i = 0; i < 8; i++) {
-      runwayLights.setPoint(i, i, true);         // Top-left to bottom-right
-      runwayLights.setPoint(i, 7 - i, true);     // Top-right to bottom-left
+      runwayLights.setPoint(i, i, true);
+      runwayLights.setPoint(i, 7 - i, true);
+      runwayLights2.setPoint(i, i, true);
+      runwayLights2.setPoint(i, 7 - i, true);
     }
   }
 }
 
-// RUNWAY PATTERN: Conflict (rapid flash all)
+// RUNWAY PATTERN: Conflict (rapid flash all) - SYNCHRONIZED
 void runwayConflictPattern() {
   if (runwayAnimFrame % 2 == 0) {
-    // All lights ON
+    // All lights ON on BOTH modules
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 8; col++) {
         runwayLights.setPoint(row, col, true);
+        runwayLights2.setPoint(row, col, true);
       }
     }
   } else {
     // All lights OFF (creates urgent flashing)
     runwayLights.clear();
+    runwayLights2.clear();
   }
 }
 
-// RUNWAY PATTERN: Closed (horizontal bars)
+// RUNWAY PATTERN: Closed (horizontal bars) - SYNCHRONIZED
 void runwayClosed() {
   runwayLights.clear();
+  runwayLights2.clear();
   
-  // Static horizontal bars (closed runway symbol)
+  // Static horizontal bars (closed runway symbol) on BOTH modules
   for (int col = 0; col < 8; col++) {
     runwayLights.setPoint(1, col, true);
     runwayLights.setPoint(3, col, true);
     runwayLights.setPoint(5, col, true);
     runwayLights.setPoint(7, col, true);
+    runwayLights2.setPoint(1, col, true);
+    runwayLights2.setPoint(3, col, true);
+    runwayLights2.setPoint(5, col, true);
+    runwayLights2.setPoint(7, col, true);
   }
 }
 
-// Adjust runway light brightness (call during night mode)
+// Adjust runway light brightness on BOTH modules
 void setRunwayBrightness(int brightness) {
   runwayBrightness = constrain(brightness, 0, 15);
   runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
+  runwayLights2.control(MD_MAX72XX::INTENSITY, runwayBrightness);
 }
 
 // ============================================================================

@@ -1,8 +1,5 @@
 // ============================================================================
-// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [L293D Motor Driver] MEGA 1
-// ============================================================================
-// ============================================================================
-// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO [L293D Motor Driver] MEGA 1
+// MEGA-1: MPU6050 + MOTOR(FAN) + LANDING GEAR SERVO + NAV LIGHTS [L293D Motor Driver]
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -11,6 +8,16 @@
 #include <MPU6050.h>
 #include <Servo.h>
 #include <IRremote.h>
+
+// ========== NAVIGATION LIGHTS (Cessna 150 Style) ==========
+const int LED_RED_LEFT = 31;      // Port (left) wingtip - Red
+const int LED_GREEN_RIGHT = 32;   // Starboard (right) wingtip - Green
+const int LED_WHITE_TAIL = 33;    // Tail strobe - White/Blue
+
+bool navLightsOn = false;
+unsigned long lastStrobeTime = 0;
+const int STROBE_INTERVAL = 1000;  // Flash every 1 second
+bool strobeState = false;
 
 // ========== LCD ==========
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
@@ -42,11 +49,11 @@ float smoothedDistance = 999.0;
 const float DISTANCE_FILTER_ALPHA = 0.3;
 
 // ========== L293D MOTOR DRIVER (FAN/PROPELLER) ==========
-const int MOTOR_IN1 = 28;  // L293D Input 1 (Direction A)
-const int MOTOR_IN2 = 29;  // L293D Input 2 (Direction B)
-const int MOTOR_EN = 30;   // L293D Enable (PWM for speed control)
+const int MOTOR_IN1 = 28;
+const int MOTOR_IN2 = 29;
+const int MOTOR_EN = 30;
 bool fanRunning = false;
-int fanSpeed = 255;        // 0-255 for PWM speed
+int fanSpeed = 255;
 
 //========== IRRemote ====================
 const int IR_RECEIVE_PIN = 15;
@@ -57,8 +64,8 @@ const int LANDING_GEAR_PIN = 27;
 const int GEAR_UP_ANGLE = 90;
 const int GEAR_DOWN_ANGLE = 180;
 bool gearDeployed = false;
-unsigned long gearDeployTime = 0;  // Track when gear was deployed
-const unsigned long MIN_GEAR_DOWN_TIME = 7000;  // 7 seconds minimum
+unsigned long gearDeployTime = 0;
+const unsigned long MIN_GEAR_DOWN_TIME = 7000;
 
 // ========== I2C ==========
 float preferredTemp = 0.0;
@@ -83,6 +90,72 @@ float yaw_filtered = 0;
 const float FILTER_ALPHA = 0.15;
 
 // ============================================================================
+// NAVIGATION LIGHTS FUNCTIONS
+// ============================================================================
+
+void initNavLights() {
+  pinMode(LED_RED_LEFT, OUTPUT);
+  pinMode(LED_GREEN_RIGHT, OUTPUT);
+  pinMode(LED_WHITE_TAIL, OUTPUT);
+  
+  // Turn off all lights initially
+  digitalWrite(LED_RED_LEFT, LOW);
+  digitalWrite(LED_GREEN_RIGHT, LOW);
+  digitalWrite(LED_WHITE_TAIL, LOW);
+  
+  Serial.println("Navigation lights initialized - OFF");
+}
+
+void turnOnNavLights() {
+  if (navLightsOn) return;
+  
+  navLightsOn = true;
+  
+  // Port (left) red - steady on
+  digitalWrite(LED_RED_LEFT, HIGH);
+  
+  // Starboard (right) green - steady on
+  digitalWrite(LED_GREEN_RIGHT, HIGH);
+  
+  // Tail strobe will flash in updateNavLights()
+  
+  Serial.println(">>> NAVIGATION LIGHTS ON <<<");
+  lcd.clear();
+  lcd.print("Nav Lights: ON");
+  delay(500);
+}
+
+void turnOffNavLights() {
+  if (!navLightsOn) return;
+  
+  navLightsOn = false;
+  
+  digitalWrite(LED_RED_LEFT, LOW);
+  digitalWrite(LED_GREEN_RIGHT, LOW);
+  digitalWrite(LED_WHITE_TAIL, LOW);
+  
+  Serial.println(">>> NAVIGATION LIGHTS OFF <<<");
+  lcd.clear();
+  lcd.print("Nav Lights: OFF");
+  delay(500);
+}
+
+void updateNavLights() {
+  if (!navLightsOn) return;
+  
+  // Keep port (red) and starboard (green) steady
+  digitalWrite(LED_RED_LEFT, HIGH);
+  digitalWrite(LED_GREEN_RIGHT, HIGH);
+  
+  // Flash tail strobe
+  if (millis() - lastStrobeTime >= STROBE_INTERVAL) {
+    strobeState = !strobeState;
+    digitalWrite(LED_WHITE_TAIL, strobeState ? HIGH : LOW);
+    lastStrobeTime = millis();
+  }
+}
+
+// ============================================================================
 // BUZZER FEEDBACK
 // ============================================================================
 unsigned long lastBuzzerTime = 0;
@@ -92,52 +165,22 @@ const float NOSE_DOWN_THRESHOLD = -20.0;
 const float NOSE_UP_THRESHOLD = 20.0;
 const float STALL_WARNING_THRESHOLD = 40.0;
 
-/*void buzzNoseDown() {
-  tone(PASSIVE_BUZZER_PIN, 262, 300);
-  delay(400);
-}
-
-void buzzNoseUp() {
-  tone(PASSIVE_BUZZER_PIN, 392, 150);
-  delay(200);
-  tone(PASSIVE_BUZZER_PIN, 392, 150);
-  delay(200);
-}
-
-void buzzStallWarning() {
-  for(int i = 0; i < 4; i++) {
-    tone(PASSIVE_BUZZER_PIN, 800, 100);
-    delay(150);
-    tone(PASSIVE_BUZZER_PIN, 600, 100);
-    delay(150);
-  }
-}
-
-void buzzRoll() {
-  tone(PASSIVE_BUZZER_PIN, 294, 80);
-  delay(120);
-  tone(PASSIVE_BUZZER_PIN, 330, 80);
-  delay(120);
-  tone(PASSIVE_BUZZER_PIN, 294, 80);
-  delay(120);
-}
-*/
-
 void buzzNoseDown() {
-  tone(PASSIVE_BUZZER_PIN, 262, 200);  // Single short beep
+  tone(PASSIVE_BUZZER_PIN, 262, 200);
 }
 
 void buzzNoseUp() {
-  tone(PASSIVE_BUZZER_PIN, 392, 200);  // Single higher beep
+  tone(PASSIVE_BUZZER_PIN, 392, 200);
 }
 
 void buzzStallWarning() {
-  tone(PASSIVE_BUZZER_PIN, 800, 200);  // Urgent high beep
+  tone(PASSIVE_BUZZER_PIN, 800, 200);
 }
 
 void buzzRoll() {
-  tone(PASSIVE_BUZZER_PIN, 330, 150);  // Medium beep
+  tone(PASSIVE_BUZZER_PIN, 330, 150);
 }
+
 void handlePitchBuzzer(float currentPitch) {
   unsigned long now = millis();
   
@@ -235,11 +278,8 @@ void showDigit(int digit, int position) {
 void startFan() {
   if (fanRunning) return;
   
-  // Set direction: IN1 HIGH, IN2 LOW = forward rotation
   digitalWrite(MOTOR_IN1, HIGH);
   digitalWrite(MOTOR_IN2, LOW);
-  
-  // Enable motor with PWM for speed control
   analogWrite(MOTOR_EN, fanSpeed);
   
   fanRunning = true;
@@ -253,10 +293,7 @@ void startFan() {
 void stopFan() {
   if (!fanRunning) return;
   
-  // Disable motor (set speed to 0)
   analogWrite(MOTOR_EN, 0);
-  
-  // Optional: Set both inputs to LOW for safety
   digitalWrite(MOTOR_IN1, LOW);
   digitalWrite(MOTOR_IN2, LOW);
   
@@ -307,12 +344,11 @@ void deployLandingGear() {
   }
   
   gearDeployed = true;
-  gearDeployTime = millis();  // Record deployment time
+  gearDeployTime = millis();
   
   tone(PASSIVE_BUZZER_PIN, 800, 300);
   Serial.println(">>> LANDING GEAR DEPLOYED <<<");
 
-  // Stop fan when landing gear is deployed
   stopFan();
   delay(500);
 }
@@ -337,37 +373,30 @@ void retractLandingGear() {
   tone(PASSIVE_BUZZER_PIN, 1000, 200);
   Serial.println(">>> LANDING GEAR RETRACTED <<<");
   
-  //start fan again 
   startFan();
   delay(500);
 }
 
 // ============================================================================
-// ULTRASONIC SENSOR - UPDATED WITH 7-SECOND GEAR LOCK
+// ULTRASONIC SENSOR
 // ============================================================================
 
 float getUltrasonicDistance() {
-  // Clear trigger
   digitalWrite(ULTRASONIC_TRIG, LOW);
   delayMicroseconds(2);
   
-  // Send 10us pulse
   digitalWrite(ULTRASONIC_TRIG, HIGH);
   delayMicroseconds(10);
   digitalWrite(ULTRASONIC_TRIG, LOW);
   
-  // Wait for echo with timeout (30ms = ~510cm max range)
   long duration = pulseIn(ULTRASONIC_ECHO, HIGH, 30000);
   
-  // If timeout (no echo received), return max distance
   if (duration == 0) {
     return 999.0;
   }
   
-  // Calculate distance in cm
   float distance = (duration * 0.0343) / 2.0;
   
-  // Filter out invalid readings
   if (distance < 2.0 || distance > 400.0) {
     return 999.0;
   }
@@ -377,7 +406,7 @@ float getUltrasonicDistance() {
 
 unsigned long lastUltrasonicCheck = 0;
 float lastDistance = 999;
-int groundedCount = 0;  // Require multiple readings to confirm grounded
+int groundedCount = 0;
 
 void checkLandingAltitude() {
   if (millis() - lastUltrasonicCheck < 200) {
@@ -387,7 +416,6 @@ void checkLandingAltitude() {
   
   float rawDistance = getUltrasonicDistance();
   
-  // Only update if valid reading
   if (rawDistance < 400 && rawDistance > 2) {
     smoothedDistance = (DISTANCE_FILTER_ALPHA * rawDistance) + 
                        ((1 - DISTANCE_FILTER_ALPHA) * smoothedDistance);
@@ -399,12 +427,10 @@ void checkLandingAltitude() {
   
   float distance = lastDistance;
   
-  // DEPLOY LANDING GEAR at 15cm
   if (distance <= 15 && !gearDeployed) {
     deployLandingGear();
   }
   
-  // GROUNDED - Stop fan when touching ground
   if (distance < 6) {
     groundedCount++;
     if (groundedCount >= 3) {
@@ -423,7 +449,6 @@ void checkLandingAltitude() {
     groundedCount = 0;
   }
   
-  // RETRACT GEAR - Only if above 25cm AND 7 seconds have passed
   if (distance > 25 && gearDeployed) {
     if (millis() - gearDeployTime >= MIN_GEAR_DOWN_TIME) {
       retractLandingGear();
@@ -432,7 +457,6 @@ void checkLandingAltitude() {
     }
   }
   
-  // ALTITUDE WARNINGS - Starting at 20cm
   if (distance < 15) {
     Serial.println("!!! PULL UP PULL UP !!!");
     tone(PASSIVE_BUZZER_PIN, 800, 100);
@@ -463,7 +487,7 @@ enum SystemState {
 SystemState currentState = STATE_PASSCODE_FIRST;
 
 // ============================================================================
-// MPU6050 FUNCTIONS [OPTIONAL - CONTINUES WITHOUT IT]
+// MPU6050 FUNCTIONS
 // ============================================================================
 
 void initMPU6050() {
@@ -589,6 +613,8 @@ void displayOrientation() {
   Serial.print(gearDeployed ? "DOWN" : "UP");
   Serial.print(" | Fan: ");
   Serial.print(fanRunning ? "ON" : "OFF");
+  Serial.print(" | Nav: ");
+  Serial.print(navLightsOn ? "ON" : "OFF");
   Serial.print(" | Status: ");
   
   if (pitch > STALL_WARNING_THRESHOLD) {
@@ -613,7 +639,7 @@ void setup() {
   Serial.begin(9600);
   Wire.begin();
   IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
-  Serial.println("MEGA-1: Flight System + Landing Gear [L293D Motor]");
+  Serial.println("MEGA-1: Flight System + Landing Gear + Nav Lights [L293D Motor]");
   
   lcd.begin(16, 2);
   pinMode(ACTIVE_BUZZER_PIN, OUTPUT);
@@ -632,6 +658,9 @@ void setup() {
   digitalWrite(MOTOR_IN2, LOW);
   analogWrite(MOTOR_EN, 0);
   Serial.println("L293D motor driver initialized - OFF");
+  
+  // Initialize Navigation Lights
+  initNavLights();
   
   landingGearServo.attach(LANDING_GEAR_PIN);
   landingGearServo.write(GEAR_UP_ANGLE);
@@ -652,7 +681,7 @@ void setup() {
   lcd.clear();
   lcd.print("MEGA-1 System");
   lcd.setCursor(0, 1);
-  lcd.print("Motor + LandGear");
+  lcd.print("Motor+Gear+Lights");
   delay(1500);
   
   initMPU6050();
@@ -832,6 +861,7 @@ void startSystem() {
   lcd.print("Taking Off!");
   
   startFan();
+  turnOnNavLights();  // Turn on navigation lights when system starts
   
   if (gearDeployed) {
     retractLandingGear();
@@ -847,6 +877,9 @@ void startSystem() {
 }
 
 void handleRunningState() {
+  // Update navigation lights (strobe effect)
+  updateNavLights();
+  
   // MPU6050 updates (if available)
   if (mpuAvailable && millis() - lastMPUUpdate >= MPU_UPDATE_INTERVAL) {
     updateOrientation();
@@ -895,6 +928,7 @@ void handleRunningState() {
 //=================================================================
 void resetToPasscode() {
   stopFan();
+  turnOffNavLights();  // Turn off navigation lights on reset
   landingGearServo.write(GEAR_UP_ANGLE);
   gearDeployed = false;
 
