@@ -1,5 +1,5 @@
 // ============================================================================
-// MEGA-2: Ground Control Unit [STEPPER + FAN + RFID PLANE DETECTION] MEGA 2
+// MEGA-2: Ground Control Unit + MAX7219 RUNWAY LIGHTS
 // ============================================================================
 
 #include <LiquidCrystal.h>
@@ -8,9 +8,19 @@
 #include <Servo.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include <MD_MAX72xx.h>
 
 // ===== PIN DEFINITIONS =====
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// MAX7219 Runway Lights
+#define MAX7219_CLK_PIN  47
+#define MAX7219_CS_PIN   46
+#define MAX7219_DIN_PIN  39
+#define HARDWARE_TYPE MD_MAX72XX::FC16_HW
+#define MAX_DEVICES 1
+
+MD_MAX72XX runwayLights = MD_MAX72XX(HARDWARE_TYPE, MAX7219_DIN_PIN, MAX7219_CLK_PIN, MAX7219_CS_PIN, MAX_DEVICES);
 
 #define DHT_PIN 22
 #define DHT_TYPE DHT11
@@ -19,12 +29,12 @@ const int ULTRASONIC_TRIG = 24;
 const int ULTRASONIC_ECHO = 26;
 const int PHOTORESISTOR_PIN = A0;
 
-// RFID RC522 Module (SAME AS YOUR TEST)
+// RFID RC522 Module
 #define RST_PIN 49
 #define SS_PIN 53
 MFRC522 rfid(SS_PIN, RST_PIN);
 
-// Motor (L293D) - FAN CONTROL ON OBJECT DETECTION
+// Motor (L293D) - FAN CONTROL
 const int MOTOR_IN1 = 8;
 const int MOTOR_IN2 = 9;
 const int MOTOR_ENA = 10; 
@@ -42,23 +52,24 @@ const int STEPPER_PIN2 = 33;
 const int STEPPER_PIN3 = 35;
 const int STEPPER_PIN4 = 37;
 
-// ========== ROTARY ENCODER ==========
+// Rotary Encoder
 const int ENCODER_CLK = 45;
 const int ENCODER_DT = 43;
 const int ENCODER_SW = 41;
 
 int lastCLK = HIGH;
-int currentAirspeed = 140;  // Default landing airspeed in knots
-const int TARGET_AIRSPEED = 100;  // Target to resolve conflict
+int currentAirspeed = 140;
+const int TARGET_AIRSPEED = 100;
 bool conflictActive = false;
 bool conflictResolved = false;
 
-
 // Passive Buzzer
 const int PASSIVE_BUZZER_PIN = 7;
-//LCD 
+
+// LCD 
 bool showingStartupMessage = false;
 unsigned long startupMessageTime = 0;
+
 // LEDs
 const int YELLOW_LED_1 = 28;
 const int YELLOW_LED_2 = 30;
@@ -92,20 +103,25 @@ unsigned long motorStartTime = 0;
 unsigned long motorTotalTime = 0;
 
 bool objectDetected = false;
-bool planeDetected = false;  // NEW: RFID plane detection
+bool planeDetected = false;
 unsigned long lastSafetyCheck = 0;
 int detectionCount = 0;
-int planeConflictCount = 0;  // NEW: Plane conflict counter
+int planeConflictCount = 0;
 
 bool nightMode = false;
 
 unsigned long lastDisplayUpdate = 0;
 unsigned long lastSerialUpdate = 0;
+unsigned long lastRunwayUpdate = 0;
 
 // Stepper Motor Variables
 int stepperSpeed = 5;
 bool stepperRunning = false;
 int stepperPosition = 0;
+
+// Runway Light Animation Variables
+int runwayAnimFrame = 0;
+int runwayBrightness = 8;
 
 // ============================================================================
 // SETUP
@@ -115,7 +131,18 @@ void setup() {
   Wire.begin(8);
   Wire.onReceive(receiveFromMega1);
 
-  // Initialize RFID (SAME AS YOUR TEST)
+  // Initialize MAX7219 Runway Lights
+  Serial.println("Initializing MAX7219 Runway Lights...");
+  runwayLights.begin();
+  runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
+  runwayLights.clear();
+  
+  // Startup animation
+  runwayStartupAnimation();
+  
+  Serial.println("✓ MAX7219 Runway Lights Ready!");
+
+  // Initialize RFID
   SPI.begin();
   rfid.PCD_Init();
   Serial.println("✓ RFID RC522 initialized");
@@ -128,34 +155,30 @@ void setup() {
   pinMode(ULTRASONIC_ECHO, INPUT);
   pinMode(PHOTORESISTOR_PIN, INPUT);
 
-  // Initialize Motor Pins for FAN control
+  // Initialize Motor Pins
   pinMode(MOTOR_IN1, OUTPUT);
   pinMode(MOTOR_IN2, OUTPUT);
   pinMode(MOTOR_ENA, OUTPUT);
-
   digitalWrite(MOTOR_IN1, LOW);
   digitalWrite(MOTOR_IN2, LOW);
   analogWrite(MOTOR_ENA, 0);
 
-  // Initialize Servo Motor (Gate)
+  // Initialize Servo
   gateServo.attach(SERVO_GATE_PIN);
   gateServo.write(GATE_OPEN_ANGLE);
   gateIsClosed = false;
-  Serial.println("Gate Servo initialized - OPEN position");
 
-  // Initialize Stepper Motor Pins
+  // Initialize Stepper
   pinMode(STEPPER_PIN1, OUTPUT);
   pinMode(STEPPER_PIN2, OUTPUT);
   pinMode(STEPPER_PIN3, OUTPUT);
   pinMode(STEPPER_PIN4, OUTPUT);
+  disableStepperMotor();
 
-  // Initialize Rotary Encoder
+  // Initialize Encoder
   pinMode(ENCODER_CLK, INPUT);
   pinMode(ENCODER_DT, INPUT);
   pinMode(ENCODER_SW, INPUT_PULLUP);
-  Serial.println("Rotary Encoder initialized");
-  
-  disableStepperMotor();
 
   pinMode(PASSIVE_BUZZER_PIN, OUTPUT);
 
@@ -165,9 +188,9 @@ void setup() {
   }
 
   lcd.clear();
-  lcd.print("MEGA-2 + RFID");
+  lcd.print("MEGA-2 RUNWAY");
   lcd.setCursor(0, 1);
-  lcd.print("Ready!");
+  lcd.print("Control Ready!");
   delay(1500);
 
   lcd.clear();
@@ -185,15 +208,13 @@ void loop() {
   checkRotaryEncoder();
   readEnvironmentalData();
   
-   // Only run main systems if MEGA-1 has started
   if (systemStarted) {
-   checkUltrasonicAndControlGate();
+    checkUltrasonicAndControlGate();
     controlStepperContinuous();
   }
-  //checkUltrasonicAndControlGate();  // Check ultrasonic + RFID and control gate + fan
-  
-  // Stepper Motor Control - CONTINUOUS ROTATION
-  //controlStepperContinuous();
+
+  // Update runway lights based on status
+  updateRunwayLights();
 
   if (millis() - lastDisplayUpdate > 1000) {
     updateDisplay();
@@ -207,20 +228,161 @@ void loop() {
 }
 
 // ============================================================================
-// RFID DETECTION FUNCTION
+// MAX7219 RUNWAY LIGHT FUNCTIONS
+// ============================================================================
+
+void runwayStartupAnimation() {
+  // Sweep from left to right
+  for (int col = 0; col < 8; col++) {
+    runwayLights.clear();
+    for (int row = 0; row < 8; row++) {
+      runwayLights.setPoint(row, col, true);
+    }
+    delay(80);
+  }
+  
+  // Flash all
+  for (int i = 0; i < 3; i++) {
+    runwayLights.clear();
+    delay(100);
+    for (int row = 0; row < 8; row++) {
+      for (int col = 0; col < 8; col++) {
+        runwayLights.setPoint(row, col, true);
+      }
+    }
+    delay(100);
+  }
+  runwayLights.clear();
+}
+
+void updateRunwayLights() {
+  // Update at different speeds based on state
+  int updateInterval = 150;
+  
+  if (conflictActive) {
+    updateInterval = 100;  // Faster during conflict
+  } else if (planeDetected || objectDetected) {
+    updateInterval = 200;  // Medium speed when blocked
+  }
+  
+  if (millis() - lastRunwayUpdate < updateInterval) return;
+  lastRunwayUpdate = millis();
+  
+  // Choose pattern based on state
+  if (conflictActive) {
+    runwayConflictPattern();
+  } else if (planeDetected) {
+    runwayBlockedPattern();
+  } else if (objectDetected) {
+    runwayWarningPattern();
+  } else if (gateIsClosed) {
+    runwayClosed();
+  } else {
+    runwayClearPattern();
+  }
+  
+  runwayAnimFrame++;
+  if (runwayAnimFrame > 7) runwayAnimFrame = 0;
+}
+
+// RUNWAY PATTERN: Clear for landing (smooth scroll)
+void runwayClearPattern() {
+  runwayLights.clear();
+  
+  // Create scrolling centerline lights
+  int offset = runwayAnimFrame;
+  
+  // Center column lights (runway centerline)
+  for (int row = 0; row < 8; row++) {
+    if ((row + offset) % 2 == 0) {
+      runwayLights.setPoint(row, 3, true);
+      runwayLights.setPoint(row, 4, true);
+    }
+  }
+  
+  // Edge lights (runway edges)
+  for (int row = 0; row < 8; row++) {
+    runwayLights.setPoint(row, 0, true);
+    runwayLights.setPoint(row, 7, true);
+  }
+}
+
+// RUNWAY PATTERN: Warning (alternating sides)
+void runwayWarningPattern() {
+  runwayLights.clear();
+  
+  // Alternating left-right warning
+  if (runwayAnimFrame % 2 == 0) {
+    // Light up left side
+    for (int row = 0; row < 8; row++) {
+      for (int col = 0; col < 4; col++) {
+        runwayLights.setPoint(row, col, true);
+      }
+    }
+  } else {
+    // Light up right side
+    for (int row = 0; row < 8; row++) {
+      for (int col = 4; col < 8; col++) {
+        runwayLights.setPoint(row, col, true);
+      }
+    }
+  }
+}
+
+// RUNWAY PATTERN: Blocked (X pattern)
+void runwayBlockedPattern() {
+  runwayLights.clear();
+  
+  if (runwayAnimFrame % 2 == 0) {
+    // Draw X pattern
+    for (int i = 0; i < 8; i++) {
+      runwayLights.setPoint(i, i, true);         // Top-left to bottom-right
+      runwayLights.setPoint(i, 7 - i, true);     // Top-right to bottom-left
+    }
+  }
+}
+
+// RUNWAY PATTERN: Conflict (rapid flash all)
+void runwayConflictPattern() {
+  if (runwayAnimFrame % 2 == 0) {
+    // All lights ON
+    for (int row = 0; row < 8; row++) {
+      for (int col = 0; col < 8; col++) {
+        runwayLights.setPoint(row, col, true);
+      }
+    }
+  } else {
+    // All lights OFF (creates urgent flashing)
+    runwayLights.clear();
+  }
+}
+
+// RUNWAY PATTERN: Closed (horizontal bars)
+void runwayClosed() {
+  runwayLights.clear();
+  
+  // Static horizontal bars (closed runway symbol)
+  for (int col = 0; col < 8; col++) {
+    runwayLights.setPoint(1, col, true);
+    runwayLights.setPoint(3, col, true);
+    runwayLights.setPoint(5, col, true);
+    runwayLights.setPoint(7, col, true);
+  }
+}
+
+// Adjust runway light brightness (call during night mode)
+void setRunwayBrightness(int brightness) {
+  runwayBrightness = constrain(brightness, 0, 15);
+  runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
+}
+
+// ============================================================================
+// RFID DETECTION
 // ============================================================================
 bool checkRFIDTag() {
-  // Check if a new card is present
-  if (!rfid.PICC_IsNewCardPresent()) {
-    return false;
-  }
+  if (!rfid.PICC_IsNewCardPresent()) return false;
+  if (!rfid.PICC_ReadCardSerial()) return false;
   
-  // Try to read the card
-  if (!rfid.PICC_ReadCardSerial()) {
-    return false;
-  }
-  
-  // Card detected! Print UID
   Serial.print("✈ RFID PLANE TAG DETECTED! UID: ");
   for (byte i = 0; i < rfid.uid.size; i++) {
     if (rfid.uid.uidByte[i] < 0x10) Serial.print("0");
@@ -229,25 +391,21 @@ bool checkRFIDTag() {
   }
   Serial.println();
   
-  // Halt PICC and stop encryption
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
-  
-  return true;  // RFID plane tag detected
+  return true;
 }
 
 // ============================================================================
-// SERVO GATE CONTROL FUNCTIONS
+// SERVO GATE CONTROL
 // ============================================================================
-
 void openGate() {
-  if (!gateIsClosed) return;  // Already open
+  if (!gateIsClosed) return;
   
   Serial.println(">>> OPENING GATE <<<");
   lcd.clear();
   lcd.print("Opening Gate...");
   
-  // Smoothly open gate
   for (int angle = GATE_CLOSED_ANGLE; angle >= GATE_OPEN_ANGLE; angle -= 2) {
     gateServo.write(angle);
     delay(15);
@@ -256,8 +414,6 @@ void openGate() {
   gateIsClosed = false;
   controlYellowLEDs(false);
   noTone(PASSIVE_BUZZER_PIN);
-  
-  // STOP FAN when gate opens
   stopFan();
   
   lcd.setCursor(0, 1);
@@ -266,7 +422,7 @@ void openGate() {
 }
 
 void closeGate() {
-  if (gateIsClosed) return;  // Already closed
+  if (gateIsClosed) return;
   
   Serial.println(">>> CLOSING GATE <<<");
   lcd.clear();
@@ -274,13 +430,9 @@ void closeGate() {
   lcd.setCursor(0, 1);
   lcd.print("Closing Gate...");
   
-  // Play warning sound
   playWarning();
-  
-  // Flash yellow LEDs
   controlYellowLEDs(true);
   
-  // Smoothly close gate
   for (int angle = GATE_OPEN_ANGLE; angle <= GATE_CLOSED_ANGLE; angle += 2) {
     gateServo.write(angle);
     delay(15);
@@ -288,27 +440,21 @@ void closeGate() {
   
   gateIsClosed = true;
   detectionCount++;
-  
-  // START FAN when gate closes
   startFan();
-  
   delay(500);
 }
 
 // ============================================================================
-// FAN CONTROL FUNCTIONS
+// FAN CONTROL
 // ============================================================================
-
 void startFan() {
   if (motorRunning) return;
   
   digitalWrite(MOTOR_IN1, HIGH);
   digitalWrite(MOTOR_IN2, LOW);
   analogWrite(MOTOR_ENA, 255);
-  
   motorRunning = true;
   motorStartTime = millis();
-  
   Serial.println(">>> FAN STARTED <<<");
 }
 
@@ -318,60 +464,46 @@ void stopFan() {
   digitalWrite(MOTOR_IN1, LOW);
   digitalWrite(MOTOR_IN2, LOW);
   analogWrite(MOTOR_ENA, 0);
-  
   motorRunning = false;
   motorTotalTime = millis() - motorStartTime;
-  
   Serial.println(">>> FAN STOPPED <<<");
 }
 
 // ============================================================================
-// PLANE CONFLICT ALARM (URGENT!)
+// PLANE CONFLICT HANDLING
 // ============================================================================
 void playPlaneConflictAlarm() {
-  // Urgent rapid beeping for plane conflict
   for (int i = 0; i < 8; i++) {
     tone(PASSIVE_BUZZER_PIN, 1500, 100);
     delay(150);
   }
   noTone(PASSIVE_BUZZER_PIN);
 }
-// ============================================================================
-// ROTARY ENCODER - AIRSPEED CONTROL
-// ============================================================================
+
 void checkRotaryEncoder() {
-  if (!conflictActive) return;  // Only work during conflict
+  if (!conflictActive) return;
   
   int currentCLK = digitalRead(ENCODER_CLK);
   
-  // Check if CLK state changed (rotation detected)
   if (currentCLK != lastCLK && currentCLK == LOW) {
     int dtValue = digitalRead(ENCODER_DT);
     
-    // Clockwise rotation = DECREASE airspeed
     if (dtValue == HIGH) {
-      currentAirspeed -= 5;  // Decrease by 5 knots
-      if (currentAirspeed < 80) currentAirspeed = 80;  // Minimum speed
-      
+      currentAirspeed -= 5;
+      if (currentAirspeed < 80) currentAirspeed = 80;
       Serial.print("Airspeed DECREASED to: ");
       Serial.print(currentAirspeed);
       Serial.println(" knots");
-      
-      tone(PASSIVE_BUZZER_PIN, 400, 50);  // Low beep
-    }
-    // Counter-clockwise = INCREASE airspeed
-    else {
-      currentAirspeed += 5;  // Increase by 5 knots
-      if (currentAirspeed > 160) currentAirspeed = 160;  // Maximum speed
-      
+      tone(PASSIVE_BUZZER_PIN, 400, 50);
+    } else {
+      currentAirspeed += 5;
+      if (currentAirspeed > 160) currentAirspeed = 160;
       Serial.print("Airspeed INCREASED to: ");
       Serial.print(currentAirspeed);
       Serial.println(" knots");
-      
-      tone(PASSIVE_BUZZER_PIN, 600, 50);  // Higher beep
+      tone(PASSIVE_BUZZER_PIN, 600, 50);
     }
     
-    // Check if conflict resolved
     if (currentAirspeed <= TARGET_AIRSPEED && !conflictResolved) {
       resolveConflict();
     }
@@ -379,9 +511,8 @@ void checkRotaryEncoder() {
   
   lastCLK = currentCLK;
   
-  // Check encoder button press (reset/confirm)
   if (digitalRead(ENCODER_SW) == LOW) {
-    delay(50);  // Debounce
+    delay(50);
     if (digitalRead(ENCODER_SW) == LOW) {
       Serial.println("Encoder button pressed - Airspeed confirmed");
       tone(PASSIVE_BUZZER_PIN, 1000, 200);
@@ -399,16 +530,13 @@ void resolveConflict() {
   Serial.print(currentAirspeed);
   Serial.println(" knots");
   
-  // Success beeps
   for (int i = 0; i < 3; i++) {
     tone(PASSIVE_BUZZER_PIN, 1200, 100);
     delay(150);
   }
   
-  // Turn off yellow LEDs
   controlYellowLEDs(false);
   
-  // Show success on LCD
   lcd.clear();
   lcd.print("CONFLICT CLEAR!");
   lcd.setCursor(0, 1);
@@ -417,35 +545,29 @@ void resolveConflict() {
   lcd.print(" kts");
   delay(3000);
 }
+
 // ============================================================================
-// ULTRASONIC + RFID DETECTION + GATE + FAN CONTROL
-// ============================================================================
-// ============================================================================
-// ULTRASONIC + RFID DETECTION + GATE + FAN CONTROL (FIXED)
+// ULTRASONIC + RFID DETECTION
 // ============================================================================
 void checkUltrasonicAndControlGate() {
   if (millis() - lastSafetyCheck > 200) {
     lastSafetyCheck = millis();
     
-    // ===== CHECK RFID INDEPENDENTLY (NOT tied to ultrasonic) =====
     bool newRFIDDetected = checkRFIDTag();
     bool previousPlaneState = planeDetected;
     
     if (newRFIDDetected && !previousPlaneState) {
-      planeDetected = true;  // PLANE DETECTED via RFID!
+      planeDetected = true;
       handlePlaneConflict();
-      return;  // Handle plane conflict immediately
+      return;
     }
     
-    // ===== NOW CHECK ULTRASONIC for regular objects =====
     long distance = getUltrasonicDistance();
     bool previousObjectState = objectDetected;
     
-    // Object detected within 20cm (but NOT a plane via RFID)
     objectDetected = (distance < 20 && distance > 2);
     
     if (objectDetected && !planeDetected) {
-      // Regular object (no RFID tag)
       if (!previousObjectState) {
         closeGate();
         lcd.clear();
@@ -457,8 +579,6 @@ void checkUltrasonicAndControlGate() {
         delay(1000);
       }
     }
-    
-    // Object cleared
     else if (!objectDetected && (previousObjectState || previousPlaneState)) {
       planeDetected = false;
       delay(1000);
@@ -473,7 +593,6 @@ void checkUltrasonicAndControlGate() {
   }
 }
 
-// ===== NEW FUNCTION: Handle plane conflict =====
 void handlePlaneConflict() {
   planeConflictCount++;
   conflictActive = true;
@@ -491,7 +610,6 @@ void handlePlaneConflict() {
   
   playPlaneConflictAlarm();
   
-  // Flash ALL LEDs rapidly
   for (int i = 0; i < 5; i++) {
     controlYellowLEDs(true);
     controlRedLEDs(true);
@@ -523,9 +641,8 @@ void handlePlaneConflict() {
 }
 
 // ============================================================================
-// STEPPER MOTOR FUNCTIONS
+// STEPPER MOTOR
 // ============================================================================
-
 void disableStepperMotor() {
   digitalWrite(STEPPER_PIN1, LOW);
   digitalWrite(STEPPER_PIN2, LOW);
@@ -535,18 +652,11 @@ void disableStepperMotor() {
 
 void stepperMotor(int steps, bool clockwise) {
   if (stepperRunning) return;
-  
   stepperRunning = true;
 
   int step_sequence[8][4] = {
-    {1, 0, 0, 0},
-    {1, 1, 0, 0},
-    {0, 1, 0, 0},
-    {0, 1, 1, 0},
-    {0, 0, 1, 0},
-    {0, 0, 1, 1},
-    {0, 0, 0, 1},
-    {1, 0, 0, 1}
+    {1, 0, 0, 0}, {1, 1, 0, 0}, {0, 1, 0, 0}, {0, 1, 1, 0},
+    {0, 0, 1, 0}, {0, 0, 1, 1}, {0, 0, 0, 1}, {1, 0, 0, 1}
   };
 
   for (int i = 0; i < steps; i++) {
@@ -564,7 +674,6 @@ void stepperMotor(int steps, bool clockwise) {
       stepperPosition -= 1;
       if (stepperPosition < 0) stepperPosition = 1024;
     }
-
     delay(stepperSpeed);
   }
 
@@ -574,10 +683,7 @@ void stepperMotor(int steps, bool clockwise) {
 
 void controlStepperContinuous() {
   static unsigned long lastRotation = 0;
-
   if (stepperRunning) return;
-
-  // STEPPER CONTINUOUSLY ROTATES - SCANS ALL ANGLES (every 1.5 seconds)
   if (millis() - lastRotation > 1500) {
     stepperMotor(256, true);
     lastRotation = millis();
@@ -585,21 +691,15 @@ void controlStepperContinuous() {
 }
 
 // ============================================================================
-// RECEIVE FROM MEGA-1 (PREFERRED TEMP)
+// I2C RECEIVE FROM MEGA-1
 // ============================================================================
 void receiveFromMega1(int bytes) {
   Serial.println("\n>>> I2C DATA RECEIVED! <<<");
-  Serial.print("Bytes: ");
-  Serial.println(bytes);
   
   if (bytes >= 1) {
     byte startSignal = Wire.read();
-    Serial.print("Signal: ");
-    Serial.println(startSignal);
     
     if (startSignal == 1) {
-      Serial.println("✓ START SIGNAL CONFIRMED!");
-      
       if (bytes == 5) {
         Wire.readBytes((char*)&preferredTemp, sizeof(float));
         Serial.print("✓ Temp: ");
@@ -609,8 +709,6 @@ void receiveFromMega1(int bytes) {
      
       tempReceived = true;
       systemStarted = true;
-
-      // SET FLAG TO SHOW STARTUP MESSAGE
       showingStartupMessage = true;
       startupMessageTime = millis();
 
@@ -633,7 +731,7 @@ void receiveFromMega1(int bytes) {
         delay(100);
       }
       
-      Serial.println(" MEGA-2 ACTIVATED!");
+      Serial.println("✓ MEGA-2 ACTIVATED!");
     }
   }
 }
@@ -644,27 +742,26 @@ void receiveFromMega1(int bytes) {
 void checkNightMode() {
   int lightLevel = analogRead(PHOTORESISTOR_PIN);
   bool previousNight = nightMode;
-
   nightMode = (lightLevel < 100);
 
   if (nightMode != previousNight) {
-
     if (nightMode) {
       Serial.println("\n*** NIGHT MODE ACTIVATED ***");
       preferredTemp = 22.0;
-
       controlRedLEDs(true);
+      setRunwayBrightness(4);  // Dim runway lights at night
+      
       if (!objectDetected && !planeDetected) controlYellowLEDs(false);
-
+      
       lcd.clear();
       lcd.print("Night Mode");
       lcd.setCursor(0,1);
       lcd.print("Temp:22.0C");
       delay(2000);
-
     } else {
       Serial.println("\n☀ *** DAY MODE ACTIVATED ***");
       controlRedLEDs(false);
+      setRunwayBrightness(8);  // Brighter during day
     }
   }
 }
@@ -676,9 +773,9 @@ void checkMotion() {
   bool pir = digitalRead(PIR_PIN);
 
   if (pir == HIGH && lastPirState == LOW) handleMotionStart();
-  if (pir == LOW  && lastPirState == HIGH) motionDetected = false;
-
+  if (pir == LOW && lastPirState == HIGH) motionDetected = false;
   if (pir == HIGH) lastMotionTime = millis();
+  
   lastPirState = pir;
 }
 
@@ -697,16 +794,15 @@ void handleMotionStart() {
   lcd.print(" H:");
   lcd.print(currentHumidity,0);
   lcd.print("%");
-
   delay(1200);
 }
 
 // ============================================================================
-// READ DHT11
+// DHT11 SENSOR
 // ============================================================================
 void readEnvironmentalData() {
   currentHumidity = dht.readHumidity();
-  currentTemp     = dht.readTemperature();
+  currentTemp = dht.readTemperature();
 
   if (isnan(currentTemp) || isnan(currentHumidity)) {
     currentTemp = 25.0;
@@ -715,7 +811,7 @@ void readEnvironmentalData() {
 }
 
 // ============================================================================
-// DISTANCE FUNCTION
+// ULTRASONIC SENSOR
 // ============================================================================
 long getUltrasonicDistance() {
   digitalWrite(ULTRASONIC_TRIG, LOW);
@@ -726,16 +822,14 @@ long getUltrasonicDistance() {
 
   long duration = pulseIn(ULTRASONIC_ECHO, HIGH, 30000);
   if (duration == 0) return 999;
-
   return (duration * 0.034) / 2;
 }
 
 // ============================================================================
-// WARNING MELODY
+// SOUND & LED CONTROL
 // ============================================================================
 void playWarning() {
   int melody[] = {1000, 800, 1000, 800, 1000};
-
   for (int i = 0; i < 5; i++) {
     tone(PASSIVE_BUZZER_PIN, melody[i], 200);
     delay(250);
@@ -743,9 +837,6 @@ void playWarning() {
   noTone(PASSIVE_BUZZER_PIN);
 }
 
-// ============================================================================
-// LED CONTROL
-// ============================================================================
 void controlYellowLEDs(bool state) {
   for (int i = 0; i < 4; i++) {
     digitalWrite(yellowLEDs[i], state ? HIGH : LOW);
