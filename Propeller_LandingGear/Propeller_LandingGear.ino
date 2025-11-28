@@ -381,6 +381,10 @@ void retractLandingGear() {
 // ULTRASONIC SENSOR
 // ============================================================================
 
+// ============================================================================
+// ULTRASONIC SENSOR
+// ============================================================================
+
 float getUltrasonicDistance() {
   digitalWrite(ULTRASONIC_TRIG, LOW);
   delayMicroseconds(2);
@@ -392,13 +396,13 @@ float getUltrasonicDistance() {
   long duration = pulseIn(ULTRASONIC_ECHO, HIGH, 30000);
   
   if (duration == 0) {
-    return 999.0;
+    return smoothedDistance; // Return last good reading instead of 999
   }
   
   float distance = (duration * 0.0343) / 2.0;
   
   if (distance < 2.0 || distance > 400.0) {
-    return 999.0;
+    return smoothedDistance; // Return last good reading instead of 999
   }
   
   return distance;
@@ -407,6 +411,7 @@ float getUltrasonicDistance() {
 unsigned long lastUltrasonicCheck = 0;
 float lastDistance = 999;
 int groundedCount = 0;
+const int ALTITUDE_THRESHOLD = 15; // Deploy gear at or below 15cm
 
 void checkLandingAltitude() {
   if (millis() - lastUltrasonicCheck < 200) {
@@ -416,22 +421,24 @@ void checkLandingAltitude() {
   
   float rawDistance = getUltrasonicDistance();
   
-  if (rawDistance < 400 && rawDistance > 2) {
+  // Only update smoothedDistance if we got a valid new reading
+  if (rawDistance != smoothedDistance && rawDistance < 400 && rawDistance > 2) {
     smoothedDistance = (DISTANCE_FILTER_ALPHA * rawDistance) + 
                        ((1 - DISTANCE_FILTER_ALPHA) * smoothedDistance);
     lastDistance = smoothedDistance;
-  } else {
-    Serial.println("Ultrasonic: Invalid reading");
-    return;
   }
+  // If invalid, we keep using the last good smoothedDistance value
   
   float distance = lastDistance;
   
-  if (distance <= 15 && !gearDeployed) {
+  // DEPLOY GEAR: When altitude drops to 15cm or below
+  if (distance <= ALTITUDE_THRESHOLD && !gearDeployed) {
     deployLandingGear();
+    return;
   }
   
-  if (distance < 6) {
+  // CHECK IF PLANE IS ON GROUND (below 6cm)
+  if (distance < 6 && gearDeployed) {
     groundedCount++;
     if (groundedCount >= 3) {
       Serial.println("GROUNDED - STOPPING FAN");
@@ -443,13 +450,14 @@ void checkLandingAltitude() {
       lcd.setCursor(0, 1);
       lcd.print("Gear: DOWN");
       delay(1000);
-      return;
+      return; // Stay grounded, keep gear deployed
     }
   } else {
     groundedCount = 0;
   }
   
-  if (distance > 25 && gearDeployed) {
+  // RETRACT GEAR: When plane climbs above 15cm AND gear has been down for minimum time
+  if (distance > ALTITUDE_THRESHOLD && gearDeployed && fanRunning == false) {
     if (millis() - gearDeployTime >= MIN_GEAR_DOWN_TIME) {
       retractLandingGear();
     } else {
@@ -457,19 +465,19 @@ void checkLandingAltitude() {
     }
   }
   
-  if (distance < 15) {
-    Serial.println("PULL UP PULL UP");
+  // ALTITUDE WARNINGS
+  if (distance < 15 && distance >= 6) {
+    Serial.println("LOW ALTITUDE WARNING");
     tone(PASSIVE_BUZZER_PIN, 800, 100);
     delay(100);
     tone(PASSIVE_BUZZER_PIN, 800, 100);
     delay(100);
-  } else if (distance < 20) {
-    Serial.println("RETARD 20");
+  } else if (distance < 20 && distance >= 15) {
+    Serial.println("APPROACHING GROUND");
     tone(PASSIVE_BUZZER_PIN, 600, 200);
     delay(100);
   }
 }
-
 String passcode1 = "";
 String passcode2 = "";
 String correctPasscode = "";
