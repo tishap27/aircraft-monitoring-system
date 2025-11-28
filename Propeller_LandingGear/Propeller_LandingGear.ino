@@ -119,7 +119,7 @@ void turnOnNavLights() {
   
   // Tail strobe will flash in updateNavLights()
   
-  Serial.println(">>> NAVIGATION LIGHTS ON <<<");
+  Serial.println("NAVIGATION LIGHTS ON");
   lcd.clear();
   lcd.print("Nav Lights: ON");
   delay(500);
@@ -134,7 +134,7 @@ void turnOffNavLights() {
   digitalWrite(LED_GREEN_RIGHT, LOW);
   digitalWrite(LED_WHITE_TAIL, LOW);
   
-  Serial.println(">>> NAVIGATION LIGHTS OFF <<<");
+  Serial.println("NAVIGATION LIGHTS OFF");
   lcd.clear();
   lcd.print("Nav Lights: OFF");
   delay(500);
@@ -191,21 +191,21 @@ void handlePitchBuzzer(float currentPitch) {
   if (currentPitch > STALL_WARNING_THRESHOLD) {
     buzzStallWarning();
     lastBuzzerTime = now;
-    Serial.println("!!! STALL WARNING !!!");
+    Serial.println("STALL WARNING");
     return;
   }
   
   if (currentPitch > NOSE_UP_THRESHOLD && currentPitch <= STALL_WARNING_THRESHOLD) {
     buzzNoseUp();
     lastBuzzerTime = now;
-    Serial.println(">> NOSE UP <<");
+    Serial.println("NOSE UP");
     return;
   }
   
   if (currentPitch < NOSE_DOWN_THRESHOLD) {
     buzzNoseDown();
     lastBuzzerTime = now;
-    Serial.println(">> NOSE DOWN <<");
+    Serial.println("NOSE DOWN");
     return;
   }
 }
@@ -221,9 +221,9 @@ void handleRollBuzzer(float currentRoll) {
     buzzRoll();
     lastBuzzerTime = now;
     if (currentRoll > 0) {
-      Serial.println(">> ROLLING RIGHT <<");
+      Serial.println("ROLLING RIGHT");
     } else {
-      Serial.println(">> ROLLING LEFT <<");
+      Serial.println("ROLLING LEFT");
     }
     return;
   }
@@ -283,7 +283,7 @@ void startFan() {
   analogWrite(MOTOR_EN, fanSpeed);
   
   fanRunning = true;
-  Serial.println(">>> FAN STARTED (L293D MOTOR ON) <<<");
+  Serial.println("FAN STARTED (L293D MOTOR ON)");
   
   lcd.clear();
   lcd.print("Fan: ON");
@@ -298,7 +298,7 @@ void stopFan() {
   digitalWrite(MOTOR_IN2, LOW);
   
   fanRunning = false;
-  Serial.println(">>> FAN STOPPED (L293D MOTOR OFF) <<<");
+  Serial.println("FAN STOPPED (L293D MOTOR OFF)");
   
   if(gearDeployed){
     lcd.clear();
@@ -326,7 +326,7 @@ void setFanSpeed(int speed) {
 void deployLandingGear() {
   if (gearDeployed) return;
   
-  Serial.println(">>> DEPLOYING LANDING GEAR <<<");
+  Serial.println("DEPLOYING LANDING GEAR");
   
   lcd.clear();
   lcd.print("LANDING GEAR");
@@ -347,7 +347,7 @@ void deployLandingGear() {
   gearDeployTime = millis();
   
   tone(PASSIVE_BUZZER_PIN, 800, 300);
-  Serial.println(">>> LANDING GEAR DEPLOYED <<<");
+  Serial.println("LANDING GEAR DEPLOYED");
 
   stopFan();
   delay(500);
@@ -356,7 +356,7 @@ void deployLandingGear() {
 void retractLandingGear() {
   if (!gearDeployed) return;
   
-  Serial.println(">>> RETRACTING LANDING GEAR <<<");
+  Serial.println("RETRACTING LANDING GEAR");
   
   lcd.clear();
   lcd.print("LANDING GEAR");
@@ -371,7 +371,7 @@ void retractLandingGear() {
   gearDeployed = false;
   
   tone(PASSIVE_BUZZER_PIN, 1000, 200);
-  Serial.println(">>> LANDING GEAR RETRACTED <<<");
+  Serial.println("LANDING GEAR RETRACTED");
   
   startFan();
   delay(500);
@@ -434,7 +434,7 @@ void checkLandingAltitude() {
   if (distance < 6) {
     groundedCount++;
     if (groundedCount >= 3) {
-      Serial.println("!!! GROUNDED - STOPPING FAN !!!");
+      Serial.println("GROUNDED - STOPPING FAN");
       stopFan();
       groundedCount = 0;
       tone(PASSIVE_BUZZER_PIN, 1000, 500);
@@ -458,7 +458,7 @@ void checkLandingAltitude() {
   }
   
   if (distance < 15) {
-    Serial.println("!!! PULL UP PULL UP !!!");
+    Serial.println("PULL UP PULL UP");
     tone(PASSIVE_BUZZER_PIN, 800, 100);
     delay(100);
     tone(PASSIVE_BUZZER_PIN, 800, 100);
@@ -603,11 +603,11 @@ void displayOrientation() {
   
   Serial.print("Pitch: ");
   Serial.print(pitch, 1);
-  Serial.print("° | Roll: ");
+  Serial.print(" deg | Roll: ");
   Serial.print(roll, 1);
-  Serial.print("° | Yaw: ");
+  Serial.print(" deg | Yaw: ");
   Serial.print(yaw, 1);
-  Serial.print("° | Alt: ");
+  Serial.print(" deg | Alt: ");
   Serial.print(lastDistance, 1);
   Serial.print("cm | Gear: ");
   Serial.print(gearDeployed ? "DOWN" : "UP");
@@ -618,7 +618,7 @@ void displayOrientation() {
   Serial.print(" | Status: ");
   
   if (pitch > STALL_WARNING_THRESHOLD) {
-    Serial.println("*** STALL WARNING ***");
+    Serial.println("STALL WARNING");
   } else if (pitch > NOSE_UP_THRESHOLD) {
     Serial.println("NOSE UP");
   } else if (pitch < NOSE_DOWN_THRESHOLD) {
@@ -681,7 +681,7 @@ void setup() {
   lcd.clear();
   lcd.print("MEGA-1 System");
   lcd.setCursor(0, 1);
-  lcd.print("Motor+Gear+Lights");
+  lcd.print("Motor+Gear+Light");
   delay(1500);
   
   initMPU6050();
@@ -875,7 +875,6 @@ void startSystem() {
   Wire.endTransmission();
   delay(1500);
 }
-
 void handleRunningState() {
   // Update navigation lights (strobe effect)
   updateNavLights();

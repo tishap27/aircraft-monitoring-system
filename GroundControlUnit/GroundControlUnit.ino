@@ -142,23 +142,23 @@ void setup() {
   runwayLights.begin();
   runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
   runwayLights.clear();
-  Serial.println("✓ Module 1 Ready!");
+  Serial.println("Module 1 Ready!");
   
   Serial.println("Initializing MAX7219 Runway Lights (Module 2)...");
   runwayLights2.begin();
   runwayLights2.control(MD_MAX72XX::INTENSITY, runwayBrightness);
   runwayLights2.clear();
-  Serial.println("✓ Module 2 Ready!");
+  Serial.println("Module 2 Ready!");
   
   // Synchronized startup animation
   runwayStartupAnimation();
   
-  Serial.println("✓ DUAL MAX7219 Runway System Ready!");
+  Serial.println("DUAL MAX7219 Runway System Ready!");
 
   // Initialize RFID
   SPI.begin();
   rfid.PCD_Init();
-  Serial.println("✓ RFID RC522 initialized");
+  Serial.println("RFID RC522 initialized");
   
   lcd.begin(16, 2);
   dht.begin();
@@ -419,7 +419,7 @@ bool checkRFIDTag() {
   if (!rfid.PICC_IsNewCardPresent()) return false;
   if (!rfid.PICC_ReadCardSerial()) return false;
   
-  Serial.print("✈ RFID PLANE TAG DETECTED! UID: ");
+  Serial.print("RFID PLANE TAG DETECTED! UID: ");
   for (byte i = 0; i < rfid.uid.size; i++) {
     if (rfid.uid.uidByte[i] < 0x10) Serial.print("0");
     Serial.print(rfid.uid.uidByte[i], HEX);
@@ -438,7 +438,7 @@ bool checkRFIDTag() {
 void openGate() {
   if (!gateIsClosed) return;
   
-  Serial.println(">>> OPENING GATE <<<");
+  Serial.println("OPENING GATE");
   lcd.clear();
   lcd.print("Opening Gate...");
   
@@ -460,7 +460,7 @@ void openGate() {
 void closeGate() {
   if (gateIsClosed) return;
   
-  Serial.println(">>> CLOSING GATE <<<");
+  Serial.println("CLOSING GATE");
   lcd.clear();
   lcd.print("OBJECT DETECTED!");
   lcd.setCursor(0, 1);
@@ -491,7 +491,7 @@ void startFan() {
   analogWrite(MOTOR_ENA, 255);
   motorRunning = true;
   motorStartTime = millis();
-  Serial.println(">>> FAN STARTED <<<");
+  Serial.println("FAN STARTED");
 }
 
 void stopFan() {
@@ -502,7 +502,7 @@ void stopFan() {
   analogWrite(MOTOR_ENA, 0);
   motorRunning = false;
   motorTotalTime = millis() - motorStartTime;
-  Serial.println(">>> FAN STOPPED <<<");
+  Serial.println("FAN STOPPED");
 }
 
 // ============================================================================
@@ -561,7 +561,7 @@ void resolveConflict() {
   conflictResolved = true;
   conflictActive = false;
   
-  Serial.println("\n✓✓✓ CONFLICT RESOLVED! ✓✓✓");
+  Serial.println("\nCONFLICT RESOLVED!");
   Serial.print("Final Airspeed: ");
   Serial.print(currentAirspeed);
   Serial.println(" knots");
@@ -635,7 +635,7 @@ void handlePlaneConflict() {
   conflictResolved = false;
   currentAirspeed = 140;
   
-  Serial.println("\n🛩 PLANE CONFLICT!!!!");
+  Serial.println("\nPLANE CONFLICT!");
   Serial.println("Another plane incoming!");
   Serial.print("Current Airspeed: ");
   Serial.print(currentAirspeed);
@@ -730,7 +730,7 @@ void controlStepperContinuous() {
 // I2C RECEIVE FROM MEGA-1
 // ============================================================================
 void receiveFromMega1(int bytes) {
-  Serial.println("\n>>> I2C DATA RECEIVED! <<<");
+  Serial.println("\nI2C DATA RECEIVED!");
   
   if (bytes >= 1) {
     byte startSignal = Wire.read();
@@ -738,9 +738,9 @@ void receiveFromMega1(int bytes) {
     if (startSignal == 1) {
       if (bytes == 5) {
         Wire.readBytes((char*)&preferredTemp, sizeof(float));
-        Serial.print("✓ Temp: ");
+        Serial.print("Temp: ");
         Serial.print(preferredTemp, 1);
-        Serial.println("°C");
+        Serial.println(" deg C");
       }
      
       tempReceived = true;
@@ -767,7 +767,7 @@ void receiveFromMega1(int bytes) {
         delay(100);
       }
       
-      Serial.println("✓ MEGA-2 ACTIVATED!");
+      Serial.println("MEGA-2 ACTIVATED!");
     }
   }
 }
@@ -782,7 +782,7 @@ void checkNightMode() {
 
   if (nightMode != previousNight) {
     if (nightMode) {
-      Serial.println("\n*** NIGHT MODE ACTIVATED ***");
+      Serial.println("\nNIGHT MODE ACTIVATED");
       preferredTemp = 22.0;
       controlRedLEDs(true);
       setRunwayBrightness(4);  // Dim runway lights at night
@@ -795,7 +795,7 @@ void checkNightMode() {
       lcd.print("Temp:22.0C");
       delay(2000);
     } else {
-      Serial.println("\n☀ *** DAY MODE ACTIVATED ***");
+      Serial.println("\nDAY MODE ACTIVATED");
       controlRedLEDs(false);
       setRunwayBrightness(8);  // Brighter during day
     }
@@ -823,7 +823,7 @@ void handleMotionStart() {
   if (!nightMode && !objectDetected && !planeDetected) controlYellowLEDs(true);
 
   lcd.clear();
-  lcd.print("*** MOTION ***");
+  lcd.print("MOTION");
   lcd.setCursor(0,1);
   lcd.print("T:");
   lcd.print(currentTemp,1);
@@ -961,7 +961,7 @@ void sendStatus() {
   Serial.print(currentTemp,1);
   Serial.print("°C  (Preferred: ");
   Serial.print(preferredTemp,1);
-  Serial.println("°C)");
+  Serial.println("°C)");   //put the hex code for degree like one of the labs
 
   Serial.print("Humidity: ");
   Serial.print(currentHumidity,0);
@@ -991,8 +991,8 @@ void sendStatus() {
   Serial.print("Night Mode: ");
   Serial.println(nightMode ? "Active" : "Inactive");
 
-  if (planeDetected) Serial.println("⚠⚠⚠ PLANE CONFLICT DETECTED!");
-  else if (objectDetected) Serial.println("⚠ Object detected - Gate CLOSED, Fan RUNNING");
+  if (planeDetected) Serial.println("WARNING: PLANE CONFLICT DETECTED!");
+  else if (objectDetected) Serial.println("WARNING: Object detected - Gate CLOSED, Fan RUNNING");
 
   Serial.print("Uptime: ");
   Serial.print(millis()/1000);
