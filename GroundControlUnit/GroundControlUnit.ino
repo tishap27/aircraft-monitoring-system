@@ -450,12 +450,17 @@ void openGate() {
   gateIsClosed = false;
   controlYellowLEDs(false);
   noTone(PASSIVE_BUZZER_PIN);
-  stopFan();
+  
+  // Stop fan when gate opens (path is clear)
+  if (motorRunning) {
+    stopFan();
+  }
   
   lcd.setCursor(0, 1);
   lcd.print("Gate: OPEN");
   delay(500);
 }
+
 
 void closeGate() {
   if (gateIsClosed) return;
@@ -476,15 +481,24 @@ void closeGate() {
   
   gateIsClosed = true;
   detectionCount++;
-  startFan();
+  
+  // Start fan when gate closes (alert mode)
+  if (!motorRunning) {
+    startFan();
+  }
+  
   delay(500);
 }
+
 
 // ============================================================================
 // FAN CONTROL
 // ============================================================================
 void startFan() {
-  if (motorRunning) return;
+  if (motorRunning) {
+    Serial.println("FAN ALREADY RUNNING");
+    return;
+  }
   
   digitalWrite(MOTOR_IN1, HIGH);
   digitalWrite(MOTOR_IN2, LOW);
@@ -495,7 +509,10 @@ void startFan() {
 }
 
 void stopFan() {
-  if (!motorRunning) return;
+  if (!motorRunning) {
+    Serial.println("FAN ALREADY STOPPED");
+    return;
+  }
   
   digitalWrite(MOTOR_IN1, LOW);
   digitalWrite(MOTOR_IN2, LOW);
@@ -586,45 +603,101 @@ void resolveConflict() {
 // ULTRASONIC + RFID DETECTION
 // ============================================================================
 void checkUltrasonicAndControlGate() {
-  if (millis() - lastSafetyCheck > 200) {
-    lastSafetyCheck = millis();
+  // This function runs continuously in loop() when systemStarted is true
+  if (millis() - lastSafetyCheck < 200) {
+    return; // Check every 200ms
+  }
+  lastSafetyCheck = millis();
+  
+  // ===== PRIORITY 1: Check for RFID plane conflict =====
+  bool newRFIDDetected = checkRFIDTag();
+  bool previousPlaneState = planeDetected;
+  
+  if (newRFIDDetected && !previousPlaneState) {
+    planeDetected = true;
+    handlePlaneConflict();
+    return; // Handle plane conflict, then exit
+  }
+  
+  // ===== PRIORITY 2: Check ultrasonic for objects =====
+  float rawDistance = getUltrasonicDistance();
+  
+  // Apply smoothing filter only if valid reading
+  if (rawDistance != smoothedDistance && rawDistance < 400 && rawDistance > 2) {
+    smoothedDistance = (DISTANCE_FILTER_ALPHA * rawDistance) + 
+                       ((1 - DISTANCE_FILTER_ALPHA) * smoothedDistance);
+  }
+  
+  float distance = smoothedDistance;
+  bool previousObjectState = objectDetected;
+  
+  // Update object detection state
+  objectDetected = (distance <= OBJECT_THRESHOLD && distance > 2);
+  
+  // ===== STATE CHANGE 1: Object NEWLY detected =====
+  if (objectDetected && !previousObjectState && !planeDetected) {
+    Serial.print("NEW OBJECT DETECTED at ");
+    Serial.print(distance, 1);
+    Serial.println(" cm");
     
-    bool newRFIDDetected = checkRFIDTag();
-    bool previousPlaneState = planeDetected;
+    closeGate();
     
-    if (newRFIDDetected && !previousPlaneState) {
-      planeDetected = true;
-      handlePlaneConflict();
-      return;
+    lcd.clear();
+    lcd.print("GATE CLOSED!");
+    lcd.setCursor(0,1);
+    lcd.print("Dist: ");
+    lcd.print(distance, 1);
+    lcd.print("cm");
+    delay(800); // Brief pause to show message
+  }
+  
+  // ===== STATE CHANGE 2: Object CLEARED =====
+  else if (!objectDetected && (previousObjectState || previousPlaneState)) {
+    Serial.println("OBJECT CLEARED - Path is clear");
+    
+    planeDetected = false; // Reset plane detection
+    
+    delay(500); // Small delay to confirm object is gone
+    
+    openGate();
+    controlYellowLEDs(false);
+    
+    lcd.clear();
+    lcd.print("Path Clear");
+    lcd.setCursor(0,1);
+    lcd.print("Gate: OPEN");
+    delay(800); // Brief pause to show message
+  }
+  
+  // ===== CONTINUOUS MONITORING: Object still present =====
+  else if (objectDetected && previousObjectState) {
+    // Object is still there, keep monitoring
+    // Gate stays closed, fan keeps running
+    // No action needed, just continue monitoring
+    
+    // Optional: Update LCD periodically with current distance
+    static unsigned long lastDistanceUpdate = 0;
+    if (millis() - lastDistanceUpdate > 2000) {
+      Serial.print("Object still detected at ");
+      Serial.print(distance, 1);
+      Serial.println(" cm");
+      lastDistanceUpdate = millis();
     }
-    
-    long distance = getUltrasonicDistance();
-    bool previousObjectState = objectDetected;
-    
-    objectDetected = (distance < 20 && distance > 2);
-    
-    if (objectDetected && !planeDetected) {
-      if (!previousObjectState) {
-        closeGate();
-        lcd.clear();
-        lcd.print("GATE CLOSED!");
-        lcd.setCursor(0,1);
-        lcd.print("Dist: ");
-        lcd.print(distance);
-        lcd.print("cm");
-        delay(1000);
-      }
-    }
-    else if (!objectDetected && (previousObjectState || previousPlaneState)) {
-      planeDetected = false;
-      delay(1000);
-      openGate();
-      controlYellowLEDs(false);
-      lcd.clear();
-      lcd.print("Path Clear");
-      lcd.setCursor(0,1);
-      lcd.print("Gate: OPEN");
-      delay(1000);
+  }
+  
+  // Debug output for close objects
+  if (distance < 50) {
+    static unsigned long lastDebug = 0;
+    if (millis() - lastDebug > 1000) {
+      Serial.print("Distance: ");
+      Serial.print(distance, 1);
+      Serial.print(" cm | Object: ");
+      Serial.print(objectDetected ? "YES" : "NO");
+      Serial.print(" | Gate: ");
+      Serial.print(gateIsClosed ? "CLOSED" : "OPEN");
+      Serial.print(" | Fan: ");
+      Serial.println(motorRunning ? "ON" : "OFF");
+      lastDebug = millis();
     }
   }
 }
