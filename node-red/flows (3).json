@@ -1,0 +1,1229 @@
+[
+    {
+        "id": "c871312bbef0b7f6",
+        "type": "tab",
+        "label": "Aircraft Monitoring System",
+        "disabled": false,
+        "info": "Aviation-style dashboard for MEGA-1 (aircraft) + MEGA-2 (runway)."
+    },
+    {
+        "id": "c4fd947ac22f6d96",
+        "type": "serial in",
+        "z": "c871312bbef0b7f6",
+        "name": "MEGA-1 (COM3)",
+        "serial": "8c4272f89eb5c115",
+        "x": 100,
+        "y": 140,
+        "wires": [
+            [
+                "4d2aeb1670cc4a20"
+            ]
+        ]
+    },
+    {
+        "id": "91ff7ec90af832ab",
+        "type": "serial in",
+        "z": "c871312bbef0b7f6",
+        "name": "MEGA-2 (COM4)",
+        "serial": "b3f67b2d47d1ad2c",
+        "x": 120,
+        "y": 360,
+        "wires": [
+            [
+                "7b78d011cc513211"
+            ]
+        ]
+    },
+    {
+        "id": "6d00e8bc52994839",
+        "type": "serial out",
+        "z": "c871312bbef0b7f6",
+        "name": "Send to MEGA-1 (COM3)",
+        "serial": "8c4272f89eb5c115",
+        "x": 1380,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "48b84aa95c4e0dda",
+        "type": "serial out",
+        "z": "c871312bbef0b7f6",
+        "name": "Send to MEGA-2 (COM4)",
+        "serial": "b3f67b2d47d1ad2c",
+        "x": 1380,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "4d2aeb1670cc4a20",
+        "type": "function",
+        "z": "c871312bbef0b7f6",
+        "name": "Parse MEGA-1 (flight data)",
+        "func": "var line = msg.payload.toString().trim();\nvar outputs = [];\nfor (var i=0;i<11;i++) outputs.push(null);\ntry {\n    if (line.indexOf('Pitch:') !== -1 && line.indexOf('Roll:') !== -1) {\n        var mPitch = line.match(/Pitch:\\s*([\\-\\d\\.]+)/);\n        var mRoll  = line.match(/Roll:\\s*([\\-\\d\\.]+)/);\n        var mYaw   = line.match(/Yaw:\\s*([\\-\\d\\.]+)/);\n        var mAlt   = line.match(/Alt:\\s*([\\d\\.]+)/);\n        var mGear  = line.match(/Gear:\\s*(\\w+)/);\n        var mFan   = line.match(/Fan:\\s*(\\w+)/);\n        if (mPitch) outputs[0] = { payload: parseFloat(mPitch[1]), topic: 'pitch' };\n        if (mRoll)  outputs[1] = { payload: parseFloat(mRoll[1]), topic: 'roll' };\n        if (mYaw)   outputs[2] = { payload: parseFloat(mYaw[1]), topic: 'yaw' };\n        if (mAlt)   outputs[3] = { payload: parseFloat(mAlt[1]), topic: 'altitude' };\n        if (mGear)  outputs[4] = { payload: mGear[1], topic: 'gear' };\n        if (mFan)   outputs[5] = { payload: mFan[1], topic: 'fan' };\n        return outputs;\n    }\n    if (line.indexOf('Ultrasonic:') !== -1 || line.indexOf('LANDED') !== -1) {\n        var m = line.match(/(Alt:|Ultrasonic:).*?(\\d+\\.?\\d*)/);\n        if (m) return [{payload: parseFloat(m[2]), topic: 'altitude' }];\n    }\n} catch(e) { node.warn('MEGA-1 parse error: '+e); }\nreturn null;\n",
+        "outputs": 11,
+        "x": 400,
+        "y": 140,
+        "wires": [
+            [
+                "da41ab15043376f1"
+            ],
+            [
+                "a8d089cd3549651f"
+            ],
+            [
+                "9bbd420ae535b0d3"
+            ],
+            [
+                "a12a142b0981a43b"
+            ],
+            [
+                "93d4e986ea9abf62"
+            ],
+            [
+                "a5c215979080f654"
+            ],
+            [],
+            [],
+            [],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "7b78d011cc513211",
+        "type": "function",
+        "z": "c871312bbef0b7f6",
+        "name": "Parse MEGA-2 JSON & logs",
+        "func": "var line = msg.payload.toString().trim();\ntry {\n    if (line.indexOf('JSON:') !== -1) {\n        var jsonStart = line.indexOf('{');\n        var jsonStr = line.substring(jsonStart);\n        var data = JSON.parse(jsonStr);\n        var out = [];\n        out.push({payload: data.temp, topic: 'temperature'});\n        out.push({payload: data.humidity, topic: 'humidity'});\n        out.push({payload: data.motion, topic: 'motion'});\n        out.push({payload: data.night, topic: 'night'});\n        out.push({payload: data.gate, topic: 'gate'});\n        out.push({payload: data.stepper, topic: 'stepper'});\n        out.push({payload: data.detections, topic: 'detections'});\n        out.push({payload: data.plane_conflicts, topic: 'plane_conflicts'});\n        out.push({payload: data.plane_detected, topic: 'plane_detected'});\n        out.push({payload: data.fan, topic: 'fan'});\n        out.push({payload: data.preferred, topic: 'preferred'});\n        return out;\n    }\n    if (line.indexOf('PLANE CONFLICT') !== -1 || line.indexOf('PLANE CONFLICT!!!!') !== -1) {\n        return [{payload:true, topic:'plane_conflict'}];\n    }\n    if (line.indexOf('RFID') !== -1 && line.indexOf('TAG') !== -1) {\n        var uidMatch = line.match(/UID:\\s*([0-9A-Fa-f:\\s]+)/);\n        if (uidMatch) return [{payload: uidMatch[1].trim(), topic: 'rfid_uid'}];\n    }\n} catch(e) { node.warn('MEGA-2 parse error: '+e); }\nreturn null;\n",
+        "outputs": 11,
+        "x": 420,
+        "y": 360,
+        "wires": [
+            [
+                "687547bee1dc3f01"
+            ],
+            [
+                "0751493bacdf53fb"
+            ],
+            [
+                "f383f2eaf2a82118"
+            ],
+            [
+                "0609709eeb3e67c0"
+            ],
+            [
+                "acd9b99f6eb6bf63"
+            ],
+            [
+                "ddb26c5fefac6bc4"
+            ],
+            [
+                "af61ce8a16bd6d08"
+            ],
+            [
+                "197b2c80bf71313b"
+            ],
+            [
+                "50655674b1e0535a"
+            ],
+            [
+                "c196a90384138c78"
+            ],
+            [
+                "a5ad5b1840f3d15d"
+            ]
+        ]
+    },
+    {
+        "id": "da41ab15043376f1",
+        "type": "ui_gauge",
+        "z": "c871312bbef0b7f6",
+        "name": "Pitch",
+        "group": "174d0e77206794bd",
+        "order": 1,
+        "width": 4,
+        "height": 3,
+        "gtype": "gage",
+        "title": "Pitch (°)",
+        "label": "deg",
+        "format": "{{value | number:1}}",
+        "min": -90,
+        "max": 90,
+        "colors": [
+            "#00b0ff",
+            "#ffd100",
+            "#ff4d4d"
+        ],
+        "seg1": -30,
+        "seg2": 30,
+        "x": 680,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "a8d089cd3549651f",
+        "type": "ui_gauge",
+        "z": "c871312bbef0b7f6",
+        "name": "Roll",
+        "group": "174d0e77206794bd",
+        "order": 2,
+        "width": 4,
+        "height": 3,
+        "gtype": "gage",
+        "title": "Roll (°)",
+        "label": "deg",
+        "format": "{{value | number:1}}",
+        "min": -180,
+        "max": 180,
+        "seg1": -45,
+        "seg2": 45,
+        "x": 680,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "9bbd420ae535b0d3",
+        "type": "ui_gauge",
+        "z": "c871312bbef0b7f6",
+        "name": "Yaw",
+        "group": "174d0e77206794bd",
+        "order": 3,
+        "width": 4,
+        "height": 3,
+        "gtype": "compass",
+        "title": "Heading (°)",
+        "label": "°",
+        "format": "{{value | number:0}}",
+        "min": -180,
+        "max": 180,
+        "x": 680,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "a12a142b0981a43b",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "174d0e77206794bd",
+        "order": 4,
+        "width": 6,
+        "height": 2,
+        "name": "Altitude",
+        "label": "Altitude (cm)",
+        "format": "{{msg.payload | number:1}} cm",
+        "layout": "row-spread",
+        "x": 680,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "93d4e986ea9abf62",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "174d0e77206794bd",
+        "order": 5,
+        "width": 3,
+        "height": 1,
+        "name": "Landing Gear",
+        "label": "Landing Gear",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "x": 680,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "a5c215979080f654",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "174d0e77206794bd",
+        "order": 6,
+        "width": 3,
+        "height": 1,
+        "name": "Fan (MEGA-1)",
+        "label": "Propeller",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "x": 680,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "687547bee1dc3f01",
+        "type": "ui_gauge",
+        "z": "c871312bbef0b7f6",
+        "name": "Temperature",
+        "group": "72f38a23f14acb64",
+        "order": 1,
+        "width": 6,
+        "height": 4,
+        "gtype": "gage",
+        "title": "Temperature (°C)",
+        "label": "°C",
+        "format": "{{value | number:1}}",
+        "min": -10,
+        "max": 50,
+        "seg1": 18,
+        "seg2": 26,
+        "x": 980,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "0751493bacdf53fb",
+        "type": "ui_gauge",
+        "z": "c871312bbef0b7f6",
+        "name": "Humidity",
+        "group": "72f38a23f14acb64",
+        "order": 2,
+        "width": 6,
+        "height": 4,
+        "gtype": "gage",
+        "title": "Humidity (%)",
+        "label": "%",
+        "format": "{{value | number:0}}",
+        "min": 0,
+        "max": 100,
+        "seg1": 30,
+        "seg2": 70,
+        "x": 980,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "f383f2eaf2a82118",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "7046072bd7c79be0",
+        "order": 1,
+        "width": 3,
+        "height": 1,
+        "name": "Motion Count",
+        "label": "Motion Count",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "x": 980,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "0609709eeb3e67c0",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "7046072bd7c79be0",
+        "order": 2,
+        "width": 3,
+        "height": 1,
+        "name": "Night Mode",
+        "label": "Mode",
+        "format": "{{msg.payload ? 'Night' : 'Day'}}",
+        "layout": "row-left",
+        "x": 980,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "acd9b99f6eb6bf63",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "7046072bd7c79be0",
+        "order": 3,
+        "width": 3,
+        "height": 1,
+        "name": "Gate Status",
+        "label": "Gate",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "x": 980,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "ddb26c5fefac6bc4",
+        "type": "ui_gauge",
+        "z": "c871312bbef0b7f6",
+        "name": "Stepper Position",
+        "group": "7046072bd7c79be0",
+        "order": 4,
+        "width": 6,
+        "height": 2,
+        "gtype": "donut",
+        "title": "Stepper Motor (steps)",
+        "label": "steps",
+        "format": "{{value}}",
+        "min": 0,
+        "max": 256,
+        "seg1": 85,
+        "seg2": 170,
+        "x": 980,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "af61ce8a16bd6d08",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "7046072bd7c79be0",
+        "order": 5,
+        "width": 3,
+        "height": 1,
+        "name": "Object Detections",
+        "label": "Object Detections",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "x": 980,
+        "y": 500,
+        "wires": []
+    },
+    {
+        "id": "197b2c80bf71313b",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "7046072bd7c79be0",
+        "order": 6,
+        "width": 3,
+        "height": 1,
+        "name": "Plane Conflicts",
+        "label": "Plane Conflicts",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "x": 980,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "50655674b1e0535a",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "7046072bd7c79be0",
+        "order": 7,
+        "width": 3,
+        "height": 1,
+        "name": "Plane Detected",
+        "label": "Plane Present",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "x": 980,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "1189782ddda8355f",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Nav Lights ON",
+        "group": "0c3c2c7b9ce992be",
+        "order": 1,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Nav ON",
+        "tooltip": "Turn navigation lights ON (MEGA-1)",
+        "color": "#ffffff",
+        "bgcolor": "#2d6fa3",
+        "icon": "",
+        "payload": "NAV:ON\n",
+        "payloadType": "str",
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 120,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "ec5024019750c089",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Nav Lights OFF",
+        "group": "0c3c2c7b9ce992be",
+        "order": 2,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Nav OFF",
+        "tooltip": "Turn navigation lights OFF (MEGA-1)",
+        "color": "#ffffff",
+        "bgcolor": "#4c4c4c",
+        "payload": "NAV:OFF\n",
+        "payloadType": "str",
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 180,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "2f224d2bf2429015",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Start Fan MEGA-1",
+        "group": "0c3c2c7b9ce992be",
+        "order": 3,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Fan Start",
+        "tooltip": "Start fan/propeller (MEGA-1)",
+        "color": "#ffffff",
+        "bgcolor": "#2d6fa3",
+        "payload": "FAN:START\n",
+        "payloadType": "str",
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 240,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "84a7b2cad2048c58",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Stop Fan MEGA-1",
+        "group": "0c3c2c7b9ce992be",
+        "order": 4,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Fan Stop",
+        "tooltip": "Stop fan/propeller (MEGA-1)",
+        "color": "#ffffff",
+        "bgcolor": "#4c4c4c",
+        "payload": "FAN:STOP\n",
+        "payloadType": "str",
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 300,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "ba87bb2063701ce7",
+        "type": "ui_slider",
+        "z": "c871312bbef0b7f6",
+        "name": "MEGA-1 Fan Speed",
+        "label": "Fan Speed",
+        "group": "0c3c2c7b9ce992be",
+        "order": 5,
+        "width": 6,
+        "height": 1,
+        "min": 0,
+        "max": 255,
+        "step": 1,
+        "x": 1240,
+        "y": 360,
+        "wires": [
+            [
+                "7c11cc6044980d2a"
+            ]
+        ]
+    },
+    {
+        "id": "3b5efe9773fbf507",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Deploy Gear",
+        "group": "0c3c2c7b9ce992be",
+        "order": 6,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Gear Down",
+        "tooltip": "Deploy landing gear (MEGA-1)",
+        "color": "#ffffff",
+        "bgcolor": "#2d6fa3",
+        "payload": "GEAR:DEPLOY\n",
+        "payloadType": "str",
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 420,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "0f4e4b0e1a824aae",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Retract Gear",
+        "group": "0c3c2c7b9ce992be",
+        "order": 7,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Gear Up",
+        "tooltip": "Retract landing gear (MEGA-1)",
+        "color": "#ffffff",
+        "bgcolor": "#4c4c4c",
+        "payload": "GEAR:RETRACT\n",
+        "payloadType": "str",
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 480,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "fc944a89a66a5ed3",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Reset System",
+        "group": "0c3c2c7b9ce992be",
+        "order": 8,
+        "width": 6,
+        "height": 1,
+        "passthru": false,
+        "label": "Reset System (IR/POWER)",
+        "tooltip": "Trigger system reset/power via MEGA-1",
+        "color": "#ffffff",
+        "bgcolor": "#8a3b3b",
+        "payload": "RESET:POWER\n",
+        "payloadType": "str",
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 540,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "bec94655a0f940b7",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Gate Open",
+        "group": "0c3c2c7b9ce992be",
+        "order": 9,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Gate Open",
+        "tooltip": "Open gate (MEGA-2 override)",
+        "color": "#ffffff",
+        "bgcolor": "#2d6fa3",
+        "payload": "GATE:OPEN\n",
+        "payloadType": "str",
+        "topic": "cmd_mega2",
+        "x": 1240,
+        "y": 620,
+        "wires": [
+            [
+                "7d038db163abb854"
+            ]
+        ]
+    },
+    {
+        "id": "dddeb22ba9c23996",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Gate Close",
+        "group": "0c3c2c7b9ce992be",
+        "order": 10,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Gate Close",
+        "tooltip": "Close gate (MEGA-2 override)",
+        "color": "#ffffff",
+        "bgcolor": "#4c4c4c",
+        "payload": "GATE:CLOSE\n",
+        "payloadType": "str",
+        "topic": "cmd_mega2",
+        "x": 1240,
+        "y": 680,
+        "wires": [
+            [
+                "7d038db163abb854"
+            ]
+        ]
+    },
+    {
+        "id": "e065a0fb2802241b",
+        "type": "ui_slider",
+        "z": "c871312bbef0b7f6",
+        "name": "Runway Brightness",
+        "label": "Brightness (0-15)",
+        "group": "0c3c2c7b9ce992be",
+        "order": 11,
+        "width": 6,
+        "height": 1,
+        "min": 0,
+        "max": 15,
+        "step": 1,
+        "x": 1240,
+        "y": 760,
+        "wires": [
+            [
+                "48f74bddfb4b8bfd"
+            ]
+        ]
+    },
+    {
+        "id": "0fec20c55fdfcebd",
+        "type": "ui_dropdown",
+        "z": "c871312bbef0b7f6",
+        "name": "Runway Mode",
+        "label": "Runway Mode",
+        "group": "0c3c2c7b9ce992be",
+        "order": 12,
+        "width": 6,
+        "height": 1,
+        "options": [
+            {
+                "label": "Clear",
+                "value": "RUNWAY:MODE:CLEAR\n",
+                "type": "str"
+            },
+            {
+                "label": "Warning",
+                "value": "RUNWAY:MODE:WARNING\n",
+                "type": "str"
+            },
+            {
+                "label": "Blocked",
+                "value": "RUNWAY:MODE:BLOCKED\n",
+                "type": "str"
+            },
+            {
+                "label": "Conflict",
+                "value": "RUNWAY:MODE:CONFLICT\n",
+                "type": "str"
+            }
+        ],
+        "x": 1240,
+        "y": 820,
+        "wires": [
+            [
+                "7d038db163abb854"
+            ]
+        ]
+    },
+    {
+        "id": "0d38eefce0a59a3d",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Stepper CW",
+        "group": "0c3c2c7b9ce992be",
+        "order": 13,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Stepper CW",
+        "tooltip": "Rotate stepper clockwise by 64 steps",
+        "color": "#ffffff",
+        "bgcolor": "#2d6fa3",
+        "payload": "STEPPER:STEP:64:CW\n",
+        "payloadType": "str",
+        "topic": "cmd_mega2",
+        "x": 1240,
+        "y": 900,
+        "wires": [
+            [
+                "7d038db163abb854"
+            ]
+        ]
+    },
+    {
+        "id": "7b9a119e6531f249",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Stepper CCW",
+        "group": "0c3c2c7b9ce992be",
+        "order": 14,
+        "width": 3,
+        "height": 1,
+        "passthru": false,
+        "label": "Stepper CCW",
+        "tooltip": "Rotate stepper counter-clockwise by 64 steps",
+        "color": "#ffffff",
+        "bgcolor": "#4c4c4c",
+        "payload": "STEPPER:STEP:64:CCW\n",
+        "payloadType": "str",
+        "topic": "cmd_mega2",
+        "x": 1240,
+        "y": 960,
+        "wires": [
+            [
+                "7d038db163abb854"
+            ]
+        ]
+    },
+    {
+        "id": "df3229717a52de44",
+        "type": "ui_button",
+        "z": "c871312bbef0b7f6",
+        "name": "Reset Conflict",
+        "group": "0c3c2c7b9ce992be",
+        "order": 15,
+        "width": 6,
+        "height": 1,
+        "passthru": false,
+        "label": "Reset Conflict / Acknowledge",
+        "tooltip": "Acknowledge and reset plane conflict (MEGA-2)",
+        "color": "#ffffff",
+        "bgcolor": "#8a3b3b",
+        "payload": "CONFLICT:RESET\n",
+        "payloadType": "str",
+        "topic": "cmd_mega2",
+        "x": 1240,
+        "y": 1040,
+        "wires": [
+            [
+                "7d038db163abb854"
+            ]
+        ]
+    },
+    {
+        "id": "e47c4b8d97035f13",
+        "type": "ui_text_input",
+        "z": "c871312bbef0b7f6",
+        "name": "Preferred Temp",
+        "label": "Set preferred temp (°C)",
+        "group": "0c3c2c7b9ce992be",
+        "order": 16,
+        "width": 6,
+        "height": 1,
+        "mode": "number",
+        "delay": 0,
+        "topic": "cmd_mega1",
+        "x": 1240,
+        "y": 1120,
+        "wires": [
+            [
+                "cd1b7cc15faef879"
+            ]
+        ]
+    },
+    {
+        "id": "da9ab9136fc1e142",
+        "type": "function",
+        "z": "c871312bbef0b7f6",
+        "name": "Route to MEGA-1",
+        "func": "var cmd = msg.payload.toString();\nif (cmd.indexOf('\\n') === -1) cmd += '\\n';\nreturn { payload: cmd };",
+        "outputs": 1,
+        "x": 1540,
+        "y": 200,
+        "wires": [
+            [
+                "6d00e8bc52994839"
+            ]
+        ]
+    },
+    {
+        "id": "7d038db163abb854",
+        "type": "function",
+        "z": "c871312bbef0b7f6",
+        "name": "Route to MEGA-2",
+        "func": "var cmd = msg.payload.toString();\nif (cmd.indexOf('\\n') === -1) cmd += '\\n';\nreturn { payload: cmd };",
+        "outputs": 1,
+        "x": 1540,
+        "y": 320,
+        "wires": [
+            [
+                "48b84aa95c4e0dda"
+            ]
+        ]
+    },
+    {
+        "id": "7c11cc6044980d2a",
+        "type": "function",
+        "z": "c871312bbef0b7f6",
+        "name": "Set Fan Speed MEGA-1",
+        "func": "var speed = Number(msg.payload);\nif (isNaN(speed)) return null;\nvar cmd = 'FAN:SPEED:' + Math.round(speed) + '\\n';\nreturn { payload: cmd, topic: 'cmd_mega1' };",
+        "outputs": 1,
+        "x": 1480,
+        "y": 360,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "48f74bddfb4b8bfd",
+        "type": "function",
+        "z": "c871312bbef0b7f6",
+        "name": "Set Runway Brightness",
+        "func": "var b = Number(msg.payload);\nif (isNaN(b)) return null;\nif (b < 0) b = 0; if (b > 15) b = 15;\nvar cmd = 'RUNWAY:BRIGHT:' + Math.round(b) + '\\n';\nreturn { payload: cmd, topic: 'cmd_mega2' };",
+        "outputs": 1,
+        "x": 1480,
+        "y": 760,
+        "wires": [
+            [
+                "7d038db163abb854"
+            ]
+        ]
+    },
+    {
+        "id": "cd1b7cc15faef879",
+        "type": "function",
+        "z": "c871312bbef0b7f6",
+        "name": "Send Preferred Temp",
+        "func": "var v = Number(msg.payload);\nif (isNaN(v)) return null;\nvar cmd = 'PREFTEMP:' + v.toFixed(1) + '\\n';\nreturn { payload: cmd, topic: 'cmd_mega1' };",
+        "outputs": 1,
+        "x": 1520,
+        "y": 1120,
+        "wires": [
+            [
+                "da9ab9136fc1e142"
+            ]
+        ]
+    },
+    {
+        "id": "555ec63df3ab53dc",
+        "type": "ui_chart",
+        "z": "c871312bbef0b7f6",
+        "name": "Pitch History",
+        "group": "fb58c64cf7e10acd",
+        "order": 1,
+        "width": 12,
+        "height": 4,
+        "label": "Pitch over time",
+        "chartType": "line",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "Waiting for data...",
+        "dot": false,
+        "ymin": -90,
+        "ymax": 90,
+        "removeOlder": 1,
+        "removeOlderPoints": "1000",
+        "removeOlderUnit": "60",
+        "useOneColor": true,
+        "colors": [
+            "#00b0ff"
+        ],
+        "outputs": 1,
+        "x": 700,
+        "y": 1200,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "6a19fd280b49c63e",
+        "type": "ui_chart",
+        "z": "c871312bbef0b7f6",
+        "name": "Roll History",
+        "group": "fb58c64cf7e10acd",
+        "order": 2,
+        "width": 12,
+        "height": 4,
+        "label": "Roll over time",
+        "chartType": "line",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "Waiting for data...",
+        "dot": false,
+        "ymin": -180,
+        "ymax": 180,
+        "removeOlder": 1,
+        "removeOlderPoints": "1000",
+        "removeOlderUnit": "60",
+        "useOneColor": true,
+        "colors": [
+            "#00d4ff"
+        ],
+        "outputs": 1,
+        "x": 700,
+        "y": 1280,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "6afdbfcad4c936bc",
+        "type": "link out",
+        "z": "c871312bbef0b7f6",
+        "name": "pitch->chart",
+        "links": [
+            "5d82510359616170"
+        ],
+        "x": 0,
+        "y": 0,
+        "wires": []
+    },
+    {
+        "id": "5d82510359616170",
+        "type": "link in",
+        "z": "c871312bbef0b7f6",
+        "name": "chart pitch in",
+        "links": [
+            "6afdbfcad4c936bc"
+        ],
+        "x": 0,
+        "y": 0,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "030106c4650685b9",
+        "type": "link out",
+        "z": "c871312bbef0b7f6",
+        "name": "roll->chart",
+        "links": [
+            "806057cfd11edd48"
+        ],
+        "x": 0,
+        "y": 0,
+        "wires": []
+    },
+    {
+        "id": "806057cfd11edd48",
+        "type": "link in",
+        "z": "c871312bbef0b7f6",
+        "name": "chart roll in",
+        "links": [
+            "030106c4650685b9"
+        ],
+        "x": 0,
+        "y": 0,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "1300c466e398e840",
+        "type": "link out",
+        "z": "c871312bbef0b7f6",
+        "name": "route pitch",
+        "links": [
+            "da41ab15043376f1"
+        ],
+        "x": 0,
+        "y": 0,
+        "wires": []
+    },
+    {
+        "id": "02dbbedf87080172",
+        "type": "ui_template",
+        "z": "c871312bbef0b7f6",
+        "group": "fb58c64cf7e10acd",
+        "name": "Aviation Theme CSS",
+        "order": 99,
+        "width": 0,
+        "height": 0,
+        "format": "<style>\n.nr-dashboard-theme md-content { background: #101827 !important; }\nmd-card { background: linear-gradient(145deg,#121726,#0b1220) !important; border:1px solid #23314b !important; }\nmd-toolbar { background: linear-gradient(145deg,#0f2738,#071424) !important; color:#bfe8ff !important; }\nmd-card-title { color:#bfe8ff !important; font-weight:600 !important; }\nlabel { color:#9fd6ff !important; font-weight:600 !important; }\n.status-text { font-size:1.2em !important; color:#dbefff !important; }\n</style>",
+        "storeOutMessages": true,
+        "fwdInMessages": true,
+        "templateScope": "global",
+        "x": 760,
+        "y": 1400,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "f32646b3ca3750a8",
+        "type": "link in",
+        "z": "c871312bbef0b7f6",
+        "name": "link pitch in",
+        "links": [],
+        "x": 520,
+        "y": 1320,
+        "wires": [
+            [
+                "555ec63df3ab53dc"
+            ]
+        ]
+    },
+    {
+        "id": "86ef33c6bf449dbf",
+        "type": "link in",
+        "z": "c871312bbef0b7f6",
+        "name": "link roll in",
+        "links": [],
+        "x": 520,
+        "y": 1400,
+        "wires": [
+            [
+                "6a19fd280b49c63e"
+            ]
+        ]
+    },
+    {
+        "id": "a5ad5b1840f3d15d",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "72f38a23f14acb64",
+        "order": 3,
+        "width": 6,
+        "height": 1,
+        "name": "Preferred Temp",
+        "label": "Preferred Temperature",
+        "format": "{{msg.payload}} °C",
+        "layout": "row-left",
+        "x": 980,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "c196a90384138c78",
+        "type": "ui_text",
+        "z": "c871312bbef0b7f6",
+        "group": "7046072bd7c79be0",
+        "order": 8,
+        "width": 3,
+        "height": 1,
+        "name": "Fan (MEGA-2)",
+        "label": "Fan (MEGA-2)",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "x": 980,
+        "y": 620,
+        "wires": []
+    },
+    {
+        "id": "e88b6226c1b2c345",
+        "type": "ui_template",
+        "z": "c871312bbef0b7f6",
+        "group": "",
+        "name": "",
+        "order": 0,
+        "width": 0,
+        "height": 0,
+        "format": "<style>\n/* MAIN BACKGROUND */\n.nr-dashboard-theme md-content {\n    background: #0d1523 !important;\n}\n\n/* CARD BACKGROUND */\nmd-card {\n    background: #111a2b !important;\n    border: 1px solid #2a3a52 !important;\n    border-radius: 10px !important;\n}\n\n/* --- SOFTER HEADER FONT (TOP TITLE) --- */\nmd-toolbar .md-toolbar-tools h1,\nmd-toolbar .md-toolbar-tools,\nmd-toolbar {\n    font-family: \"Roboto\", \"Segoe UI\", Arial, sans-serif !important;\n    font-weight: 500 !important;\n    color: #c7eaff !important;\n    letter-spacing: 1px !important;\n    background: linear-gradient(145deg,#0e2234,#071423) !important;\n}\n\n/* GROUP TITLES (Flight Deck, Runway Control, etc.) */\nmd-card-title,\n.nr-dashboard-cardtitle,\nmd-card h1,\nmd-card h2,\nmd-card h3,\n.legend {\n    color: #bde4ff !important;\n    font-weight: 600 !important;\n}\n\n/* GAUGE LABELS (Pitch, Roll, Heading) */\n.nr-dashboard-gauge text {\n    fill: #d3ecff !important;\n    font-weight: 600 !important;\n}\n\n/* TEXT LABELS (Altitude, Landing Gear, Fan, etc.) */\nlabel, .nr-dashboard-template label {\n    color: #c3e7ff !important;\n    font-weight: 600 !important;\n}\n\n/* VALUE TEXT (numbers on text widgets) */\n.nr-dashboard-text .value,\n.nr-dashboard-template .value {\n    color: #ffffff !important;\n    font-weight: 600 !important;\n}\n\n/* BUTTON FONT */\nmd-button {\n    font-family: \"Roboto\", \"Segoe UI\", sans-serif !important;\n    font-weight: 500 !important;\n}\n\n/* SLIDER LABELS */\nmd-slider .md-thumb-text {\n    color: #ffffff !important;\n}\n</style>\n",
+        "storeOutMessages": true,
+        "fwdInMessages": true,
+        "resendOnRefresh": true,
+        "templateScope": "local",
+        "className": "",
+        "x": 220,
+        "y": 480,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "8c4272f89eb5c115",
+        "type": "serial-port",
+        "name": "",
+        "serialport": "COM3",
+        "serialbaud": "9600",
+        "databits": "8",
+        "parity": "none",
+        "stopbits": "1",
+        "waitfor": "",
+        "dtr": "none",
+        "rts": "none",
+        "cts": "none",
+        "dsr": "none",
+        "newline": "\\n",
+        "bin": "false",
+        "out": "char",
+        "addchar": "",
+        "responsetimeout": "10000"
+    },
+    {
+        "id": "b3f67b2d47d1ad2c",
+        "type": "serial-port",
+        "name": "",
+        "serialport": "COM4",
+        "serialbaud": "9600",
+        "databits": "8",
+        "parity": "none",
+        "stopbits": "1",
+        "waitfor": "",
+        "dtr": "none",
+        "rts": "none",
+        "cts": "none",
+        "dsr": "none",
+        "newline": "\\n",
+        "bin": "false",
+        "out": "char",
+        "addchar": "",
+        "responsetimeout": "10000"
+    },
+    {
+        "id": "174d0e77206794bd",
+        "type": "ui_group",
+        "z": "c871312bbef0b7f6",
+        "name": "Flight Deck",
+        "tab": "047fc774ff5cc526",
+        "order": 1,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "72f38a23f14acb64",
+        "type": "ui_group",
+        "z": "c871312bbef0b7f6",
+        "name": "Environment",
+        "tab": "047fc774ff5cc526",
+        "order": 3,
+        "disp": true,
+        "width": "6",
+        "collapse": false
+    },
+    {
+        "id": "7046072bd7c79be0",
+        "type": "ui_group",
+        "z": "c871312bbef0b7f6",
+        "name": "Runway Control",
+        "tab": "047fc774ff5cc526",
+        "order": 2,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "0c3c2c7b9ce992be",
+        "type": "ui_group",
+        "z": "c871312bbef0b7f6",
+        "name": "System Status & Controls",
+        "tab": "047fc774ff5cc526",
+        "order": 4,
+        "disp": true,
+        "width": "6",
+        "collapse": false
+    },
+    {
+        "id": "fb58c64cf7e10acd",
+        "type": "ui_group",
+        "z": "c871312bbef0b7f6",
+        "name": "Historical Data",
+        "tab": "047fc774ff5cc526",
+        "order": 5,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "047fc774ff5cc526",
+        "type": "ui_tab",
+        "z": "c871312bbef0b7f6",
+        "name": "Aircraft Monitoring System",
+        "icon": "airplanemode_active",
+        "order": 1,
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "e87cc2703a101c1a",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-node-serialport": "2.0.3",
+            "node-red-dashboard": "3.6.6"
+        }
+    }
+]
