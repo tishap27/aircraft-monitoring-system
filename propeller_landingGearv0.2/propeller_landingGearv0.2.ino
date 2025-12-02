@@ -117,18 +117,10 @@ void turnOnNavLights() {
   
   navLightsOn = true;
   
-  // Port (left) red - steady on
   digitalWrite(LED_RED_LEFT, HIGH);
-  
-  // Starboard (right) green - steady on
   digitalWrite(LED_GREEN_RIGHT, HIGH);
   
-  // Tail strobe will flash in updateNavLights()
-  
   Serial.println("NAVIGATION LIGHTS ON");
-  lcd.clear();
-  lcd.print("Nav Lights: ON");
-  delay(500);
 }
 
 void turnOffNavLights() {
@@ -141,9 +133,6 @@ void turnOffNavLights() {
   digitalWrite(LED_WHITE_TAIL, LOW);
   
   Serial.println("NAVIGATION LIGHTS OFF");
-  lcd.clear();
-  lcd.print("Nav Lights: OFF");
-  delay(500);
 }
 
 void updateNavLights() {
@@ -280,7 +269,6 @@ void showDigit(int digit, int position) {
 // ============================================================================
 // FAN/PROPELLER CONTROL (L293D MOTOR DRIVER)
 // ============================================================================
-
 void startFan() {
   if (fanRunning) return;
   
@@ -290,10 +278,6 @@ void startFan() {
   
   fanRunning = true;
   Serial.println("FAN STARTED (L293D MOTOR ON)");
-  
-  lcd.clear();
-  lcd.print("Fan: ON");
-  delay(500);
 }
 
 void stopFan() {
@@ -305,14 +289,6 @@ void stopFan() {
   
   fanRunning = false;
   Serial.println("FAN STOPPED (L293D MOTOR OFF)");
-  
-  if(gearDeployed){
-    lcd.clear();
-    lcd.print("Fan: OFF");
-    lcd.setCursor(0, 1);
-    lcd.print("LANDED!");
-    delay(1000);
-  }
 }
 
 void setFanSpeed(int speed) {
@@ -333,11 +309,6 @@ void deployLandingGear() {
   if (gearDeployed) return;
   
   Serial.println("DEPLOYING LANDING GEAR");
-  
-  lcd.clear();
-  lcd.print("LANDING GEAR");
-  lcd.setCursor(0, 1);
-  lcd.print("DEPLOYING...");
   
   tone(PASSIVE_BUZZER_PIN, 600, 200);
   delay(250);
@@ -364,11 +335,6 @@ void retractLandingGear() {
   
   Serial.println("RETRACTING LANDING GEAR");
   
-  lcd.clear();
-  lcd.print("LANDING GEAR");
-  lcd.setCursor(0, 1);
-  lcd.print("RETRACTING...");
-  
   for (int angle = GEAR_DOWN_ANGLE; angle >= GEAR_UP_ANGLE; angle -= 3) {
     landingGearServo.write(angle);
     delay(20);
@@ -383,9 +349,6 @@ void retractLandingGear() {
   delay(500);
 }
 
-// ============================================================================
-// ULTRASONIC SENSOR
-// ============================================================================
 
 // ============================================================================
 // ULTRASONIC SENSOR
@@ -452,12 +415,7 @@ void checkLandingAltitude() {
       stopFan();
       groundedCount = 0;
       tone(PASSIVE_BUZZER_PIN, 1000, 500);
-      
-      // NON-BLOCKING LCD UPDATE
-      lcd.clear();
-      lcd.print("LANDED!");
-      lcd.setCursor(0, 1);
-      lcd.print("Gear: DOWN");
+      // No LCD print - will show in main display
       return;
     }
   } else {
@@ -471,8 +429,8 @@ void checkLandingAltitude() {
     }
   }
   
-  // NON-BLOCKING ALTITUDE WARNINGS
-  if (millis() - lastWarningTime > 1000) {  // Limit warning frequency
+  // ALTITUDE WARNINGS (no LCD, just tones)
+  if (millis() - lastWarningTime > 1000) {
     if (distance < 15 && distance >= 6) {
       Serial.println("LOW ALTITUDE WARNING");
       tone(PASSIVE_BUZZER_PIN, 800, 100);
@@ -902,7 +860,6 @@ void startSystem() {
 void handleRunningState() {
   updateNavLights();
   
-  // MPU6050 updates
   if (mpuAvailable && millis() - lastMPUUpdate >= MPU_UPDATE_INTERVAL) {
     updateOrientation();
     displayOrientation();
@@ -911,9 +868,7 @@ void handleRunningState() {
     lastMPUUpdate = millis();
   }
   
-  // ADD THIS - Check IMU health periodically
   checkIMUHealth();
-  
   checkLandingAltitude();
   
   static unsigned long lastLCDUpdate = 0;
@@ -921,26 +876,41 @@ void handleRunningState() {
   
   if (millis() - lastLCDUpdate >= 2000) {
     lcd.clear();
+    
     if (showPitchRoll && mpuAvailable) {
+      // Show flight data
+      lcd.setCursor(0, 0);
       lcd.print("P:");
-      lcd.print(pitch, 1);
+      lcd.print(pitch, 0);  // No decimal for cleaner look
       lcd.print(" R:");
-      lcd.print(roll, 1);
-      lcd.setCursor(0,1);
-      lcd.print("H:");
+      lcd.print(roll, 0);
+      lcd.print(" Y:");
+      lcd.print(yaw, 0);
+      lcd.print("   ");
+      
+      lcd.setCursor(0, 1);
+      lcd.print("Alt:");
       lcd.print(lastDistance, 0);
-      lcd.print("cm G:");
-      lcd.print(gearDeployed ? "DN" : "UP");
+      lcd.print("cm ");
+      lcd.print(gearDeployed ? "GR:DN" : "GR:UP");
+      lcd.print("  ");
+      
     } else {
-      lcd.print("Temp:");
-      lcd.print(preferredTemp, 1);
-      lcd.print("C");
-      lcd.setCursor(0,1);
+      // Show system status
+      lcd.setCursor(0, 0);
       lcd.print("Fan:");
-      lcd.print(fanRunning ? "ON" : "OFF");
-      lcd.print(" Alt:");
+      lcd.print(fanRunning ? "ON " : "OFF");
+      lcd.print(" Nav:");
+      lcd.print(navLightsOn ? "ON " : "OFF");
+      
+      lcd.setCursor(0, 1);
+      lcd.print("T:");
+      lcd.print(preferredTemp, 1);
+      lcd.print("C Alt:");
       lcd.print(lastDistance, 0);
+      lcd.print("   ");
     }
+    
     showPitchRoll = !showPitchRoll;
     lastLCDUpdate = millis();
   }
