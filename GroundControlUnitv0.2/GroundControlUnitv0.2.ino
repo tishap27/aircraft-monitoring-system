@@ -36,7 +36,7 @@ const int ULTRASONIC_ECHO = 26;
 const int PHOTORESISTOR_PIN = A0;
 
 // ========== ULTRASONIC SENSOR ==========
-
+unsigned long lastUltrasonicCheck = 0;
 float smoothedDistance = 999.0;
 const float DISTANCE_FILTER_ALPHA = 0.3;
 const int OBJECT_THRESHOLD = 50;   // adjust as needed
@@ -232,6 +232,7 @@ void loop() {
   readEnvironmentalData();
   
   if (systemStarted) {
+    checkRFIDPlane();
     checkUltrasonicAndControlGate();
     controlStepperContinuous();
   }
@@ -422,6 +423,7 @@ void setRunwayBrightness(int brightness) {
   runwayLights2.control(MD_MAX72XX::INTENSITY, runwayBrightness);
 }
 
+
 // ============================================================================
 // RFID DETECTION
 // ============================================================================
@@ -442,6 +444,19 @@ bool checkRFIDTag() {
   return true;
 }
 
+void checkRFIDPlane() {
+  bool newRFIDDetected = checkRFIDTag();
+  
+  if (newRFIDDetected && !conflictActive) {
+    planeDetected = true;
+    handlePlaneConflict();
+  }
+  
+  if (conflictResolved && planeDetected) {
+    planeDetected = false;
+    conflictResolved = false;
+  }
+}
 // ============================================================================
 // SERVO GATE CONTROL
 // ============================================================================
@@ -613,101 +628,58 @@ void resolveConflict() {
 // ULTRASONIC + RFID DETECTION
 // ============================================================================
 void checkUltrasonicAndControlGate() {
-  if (millis() - lastSafetyCheck < 200) {
-    return; // Check every 200ms
+  if (millis() - lastUltrasonicCheck < 200) {  // Check every 200ms
+    return;
   }
-  lastSafetyCheck = millis();
+  lastUltrasonicCheck = millis();
   
-  // ===== PRIORITY 1: Check for RFID plane conflict =====
-  bool newRFIDDetected = checkRFIDTag();
+  // Get distance reading
+  float distance = getUltrasonicDistance();
   
-  if (newRFIDDetected && !conflictActive) {
-    planeDetected = true;
-    handlePlaneConflict();
-    return; // Handle plane conflict, then exit
-  }
-  
-  // If conflict is resolved, reset plane detection
-  if (conflictResolved && planeDetected) {
-    planeDetected = false;
-    conflictResolved = false;
-  }
-  
-  // ===== PRIORITY 2: Check ultrasonic for objects =====
-  float rawDistance = getUltrasonicDistance();
-  
-  // Apply smoothing filter only if valid reading
-  if (rawDistance < 400 && rawDistance > 2) {
-    smoothedDistance = (DISTANCE_FILTER_ALPHA * rawDistance) + 
-                       ((1 - DISTANCE_FILTER_ALPHA) * smoothedDistance);
-  }
-  
-  float distance = smoothedDistance;
-  bool previousObjectState = objectDetected;
-  
-  // Update object detection state (ignore if plane conflict is active)
-  if (!conflictActive) {
-    objectDetected = (distance <= OBJECT_THRESHOLD && distance > 2);
-  }
-  
-  // ===== STATE CHANGE 1: Object NEWLY detected =====
-  if (objectDetected && !previousObjectState && !conflictActive) {
-    Serial.print("NEW OBJECT DETECTED at ");
-    Serial.print(distance, 1);
-    Serial.println(" cm");
-    
-    closeGate();
-    
-    lcd.clear();
-    lcd.print("GATE CLOSED!");
-    lcd.setCursor(0,1);
-    lcd.print("Dist: ");
-    lcd.print(distance, 1);
-    lcd.print("cm");
-    // REMOVED the delay(800) here - it blocks continuous checking
-  }
-  
-  // ===== STATE CHANGE 2: Object CLEARED =====
-  else if (!objectDetected && previousObjectState && !conflictActive) {
-    Serial.println("OBJECT CLEARED - Path is clear");
-    
-    // Brief confirmation delay
-    delay(300);
-    
-    // Double-check it's really gone
-    float confirmDistance = getUltrasonicDistance();
-    if (confirmDistance > OBJECT_THRESHOLD || confirmDistance < 2) {
+  // Simple: Object detected? Close gate. No object? Open gate.
+  if (distance <= OBJECT_THRESHOLD && distance > 2) {
+    // OBJECT DETECTED - Close gate immediately
+    if (!gateIsClosed) {
+      Serial.print("OBJECT DETECTED at ");
+      Serial.print(distance, 1);
+      Serial.println(" cm - CLOSING GATE");
+      
+      closeGate();
+      
+      lcd.clear();
+      lcd.print("OBJECT DETECTED!");
+      lcd.setCursor(0,1);
+      lcd.print("Dist: ");
+      lcd.print(distance, 1);
+      lcd.print("cm");
+    }
+  } else {
+    // NO OBJECT - Open gate immediately
+    if (gateIsClosed && !planeDetected) {  // Don't open if plane conflict active
+      Serial.println("PATH CLEAR - OPENING GATE");
+      
       openGate();
-      controlYellowLEDs(false);
       
       lcd.clear();
       lcd.print("Path Clear");
       lcd.setCursor(0,1);
       lcd.print("Gate: OPEN");
-      // REMOVED the delay(800) here too
-    } else {
-      // False alarm, object still there
-      objectDetected = true;
-      Serial.println("False clear - object still present");
     }
   }
   
-  // ===== Debug output for monitoring =====
+  // Debug output every second
   static unsigned long lastDebug = 0;
   if (millis() - lastDebug > 1000) {
     Serial.print("Dist: ");
     Serial.print(distance, 1);
-    Serial.print("cm | Obj: ");
-    Serial.print(objectDetected ? "YES" : "NO");
-    Serial.print(" | Gate: ");
+    Serial.print("cm | Gate: ");
     Serial.print(gateIsClosed ? "CLOSED" : "OPEN");
     Serial.print(" | Fan: ");
-    Serial.print(motorRunning ? "ON" : "OFF");
-    Serial.print(" | Plane: ");
-    Serial.println(planeDetected ? "YES" : "NO");
+    Serial.println(motorRunning ? "ON" : "OFF");
     lastDebug = millis();
   }
 }
+
 void handlePlaneConflict() {
   planeConflictCount++;
   conflictActive = true;
@@ -957,11 +929,13 @@ long getUltrasonicDistance() {
   digitalWrite(ULTRASONIC_TRIG, HIGH);
   delayMicroseconds(10);
   digitalWrite(ULTRASONIC_TRIG, LOW);
-
+  
   long duration = pulseIn(ULTRASONIC_ECHO, HIGH, 30000);
   if (duration == 0) return 999;
+  
   return (duration * 0.034) / 2;
 }
+
 
 // ============================================================================
 // SOUND & LED CONTROL

@@ -112,7 +112,7 @@ void loop() {
   checkMotion();
   readEnvironmentalData();
   
-  checkUltrasonicSafety();  // ⭐ FIXED: Always check, not just when motor running
+  checkUltrasonicSafety();  //  FIXED: Always check, not just when motor running
   
   controlMotor();
 

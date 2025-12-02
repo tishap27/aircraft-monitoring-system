@@ -875,40 +875,37 @@ void handleRunningState() {
   static bool showPitchRoll = true;
   
   if (millis() - lastLCDUpdate >= 2000) {
-    lcd.clear();
+    lcd.clear();  // This clears the display
     
     if (showPitchRoll && mpuAvailable) {
-      // Show flight data
+      // Show flight data with fixed formatting
       lcd.setCursor(0, 0);
-      lcd.print("P:");
-      lcd.print(pitch, 0);  // No decimal for cleaner look
-      lcd.print(" R:");
-      lcd.print(roll, 0);
-      lcd.print(" Y:");
-      lcd.print(yaw, 0);
-      lcd.print("   ");
+      
+      // Format: "P:XXX R:XXX Y:XXX"
+      char line1[17];
+      sprintf(line1, "P:%-4d R:%-4d Y:%-4d", (int)pitch, (int)roll, (int)yaw);
+      lcd.print(line1);
       
       lcd.setCursor(0, 1);
-      lcd.print("Alt:");
-      lcd.print(lastDistance, 0);
-      lcd.print("cm ");
-      lcd.print(gearDeployed ? "GR:DN" : "GR:UP");
-      lcd.print("  ");
+      
+      // Format: "Alt:XXXcm GR:XX"
+      char line2[17];
+      sprintf(line2, "Alt:%-4dcm %s", (int)lastDistance, gearDeployed ? "GR:DN" : "GR:UP");
+      lcd.print(line2);
       
     } else {
       // Show system status
       lcd.setCursor(0, 0);
-      lcd.print("Fan:");
-      lcd.print(fanRunning ? "ON " : "OFF");
-      lcd.print(" Nav:");
-      lcd.print(navLightsOn ? "ON " : "OFF");
+      
+      char line1[17];
+      sprintf(line1, "Fan:%-3s Nav:%-3s", fanRunning ? "ON" : "OFF", navLightsOn ? "ON" : "OFF");
+      lcd.print(line1);
       
       lcd.setCursor(0, 1);
-      lcd.print("T:");
-      lcd.print(preferredTemp, 1);
-      lcd.print("C Alt:");
-      lcd.print(lastDistance, 0);
-      lcd.print("   ");
+      
+      char line2[17];
+      sprintf(line2, "T:%.1fC Alt:%-4d", preferredTemp, (int)lastDistance);
+      lcd.print(line2);
     }
     
     showPitchRoll = !showPitchRoll;
@@ -917,7 +914,6 @@ void handleRunningState() {
   
   delay(10);
 }
-
 //======================================================================
 //RESET 
 //=================================================================
