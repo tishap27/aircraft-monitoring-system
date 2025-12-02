@@ -35,6 +35,12 @@ const int ULTRASONIC_TRIG = 24;
 const int ULTRASONIC_ECHO = 26;
 const int PHOTORESISTOR_PIN = A0;
 
+// ========== ULTRASONIC SENSOR ==========
+
+float smoothedDistance = 999.0;
+const float DISTANCE_FILTER_ALPHA = 0.3;
+const int OBJECT_THRESHOLD = 50;   // adjust as needed
+
 // RFID RC522 Module
 #define RST_PIN 49
 #define SS_PIN 53
