@@ -139,6 +139,15 @@ bool stepperDirection = true;
 int runwayAnimFrame = 0;
 int runwayBrightness = 8;
 
+// Function declarations (add these before setup())
+void updateRunwayLights();
+void runwayStartupAnimation();
+void runwayClearPattern();
+void runwayWarningPattern();
+void runwayBlockedPattern();
+void runwayConflictPattern();
+void runwayClosed();
+void setRunwayBrightness(int brightness);
 // ============================================================================
 // SETUP
 // ============================================================================
@@ -256,6 +265,7 @@ void loop() {
 // ============================================================================
 
 void runwayStartupAnimation() {
+  // Sweep from left to right
   // Synchronized sweep from left to right on BOTH modules
   for (int col = 0; col < 8; col++) {
     runwayLights.clear();
@@ -266,7 +276,8 @@ void runwayStartupAnimation() {
     }
     delay(80);
   }
-  
+
+  // Flash all
   // Synchronized flash all on BOTH modules
   for (int i = 0; i < 3; i++) {
     runwayLights.clear();
@@ -285,43 +296,35 @@ void runwayStartupAnimation() {
 }
 
 void updateRunwayLights() {
-  // Update at different speeds based on state
-  int updateInterval = 150;
-  
-  if (conflictActive) {
-    updateInterval = 100;  // Faster during conflict
-  } else if (planeDetected || objectDetected) {
-    updateInterval = 200;  // Medium speed when blocked
-  }
+  static unsigned long updateInterval = 150; // Add this missing variable
   
   if (millis() - lastRunwayUpdate < updateInterval) return;
   lastRunwayUpdate = millis();
-  
+
   // Choose pattern based on state - BOTH modules show same pattern
   if (conflictActive) {
     runwayConflictPattern();
   } else if (planeDetected) {
-    runwayBlockedPattern();
-  } else if (objectDetected) {
     runwayWarningPattern();
-  } else if (gateIsClosed) {
-    runwayClosed();
+  } else if (objectDetected) {
+    runwayBlockedPattern();
   } else {
     runwayClearPattern();
   }
-  
+
   runwayAnimFrame++;
   if (runwayAnimFrame > 7) runwayAnimFrame = 0;
 }
-
+// RUNWAY PATTERN: Clear for landing (smooth scroll)
 // RUNWAY PATTERN: Clear for landing (smooth scroll) - SYNCHRONIZED
 void runwayClearPattern() {
   runwayLights.clear();
   runwayLights2.clear();
-  
+
   // Create scrolling centerline lights
   int offset = runwayAnimFrame;
-  
+
+  // Center column lights (runway centerline)
   // Apply to BOTH modules simultaneously
   for (int row = 0; row < 8; row++) {
     // Center column lights (runway centerline)
@@ -331,6 +334,10 @@ void runwayClearPattern() {
       runwayLights2.setPoint(row, 3, true);
       runwayLights2.setPoint(row, 4, true);
     }
+  }
+  
+  // Edge lights (runway edges)
+  for (int row = 0; row < 8; row++) {
     
     // Edge lights (runway edges)
     runwayLights.setPoint(row, 0, true);
@@ -340,11 +347,13 @@ void runwayClearPattern() {
   }
 }
 
+// RUNWAY PATTERN: Warning (alternating sides)
 // RUNWAY PATTERN: Warning (alternating sides) - SYNCHRONIZED
 void runwayWarningPattern() {
   runwayLights.clear();
   runwayLights2.clear();
-  
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+  // Alternating left-right warning
   // Alternating left-right warning on BOTH modules
   if (runwayAnimFrame % 2 == 0) {
     // Light up left side
@@ -365,14 +374,18 @@ void runwayWarningPattern() {
   }
 }
 
+// RUNWAY PATTERN: Blocked (X pattern)
 // RUNWAY PATTERN: Blocked (X pattern) - SYNCHRONIZED
 void runwayBlockedPattern() {
   runwayLights.clear();
   runwayLights2.clear();
-  
+
   if (runwayAnimFrame % 2 == 0) {
+    // Draw X pattern
     // Draw X pattern on BOTH modules
     for (int i = 0; i < 8; i++) {
+      runwayLights.setPoint(i, i, true);         // Top-left to bottom-right
+      runwayLights.setPoint(i, 7 - i, true);     // Top-right to bottom-left
       runwayLights.setPoint(i, i, true);
       runwayLights.setPoint(i, 7 - i, true);
       runwayLights2.setPoint(i, i, true);
@@ -381,9 +394,11 @@ void runwayBlockedPattern() {
   }
 }
 
+// RUNWAY PATTERN: Conflict (rapid flash all)
 // RUNWAY PATTERN: Conflict (rapid flash all) - SYNCHRONIZED
 void runwayConflictPattern() {
   if (runwayAnimFrame % 2 == 0) {
+    // All lights ON
     // All lights ON on BOTH modules
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 8; col++) {
@@ -398,11 +413,13 @@ void runwayConflictPattern() {
   }
 }
 
+// RUNWAY PATTERN: Closed (horizontal bars)
 // RUNWAY PATTERN: Closed (horizontal bars) - SYNCHRONIZED
 void runwayClosed() {
   runwayLights.clear();
   runwayLights2.clear();
-  
+
+  // Static horizontal bars (closed runway symbol)
   // Static horizontal bars (closed runway symbol) on BOTH modules
   for (int col = 0; col < 8; col++) {
     runwayLights.setPoint(1, col, true);
@@ -416,13 +433,13 @@ void runwayClosed() {
   }
 }
 
+// Adjust runway light brightness (call during night mode)
 // Adjust runway light brightness on BOTH modules
 void setRunwayBrightness(int brightness) {
   runwayBrightness = constrain(brightness, 0, 15);
   runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
   runwayLights2.control(MD_MAX72XX::INTENSITY, runwayBrightness);
 }
-
 
 // ============================================================================
 // RFID DETECTION
