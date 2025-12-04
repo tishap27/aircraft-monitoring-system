@@ -1,6 +1,60 @@
-// ============================================================================
-// MEGA-2: Ground Control Unit + DUAL MAX7219 RUNWAY LIGHTS (SYNCHRONIZED)
-// ============================================================================
+/* ============================================================================
+ * MEGA-2: Ground Control Unit 
+ *
+ * DESCRIPTION:
+ * This program runs on Arduino MEGA 2560 #2 and serves as the ground control
+ * station for an aircraft simulation system. It manages ground operations
+ * including environmental monitoring, RFID-based aircraft conflict detection,
+ * runway lighting with dual MAX7219 LED matrices, gate control, and radar
+ * simulation. Receives flight data from MEGA-1 via I2C communication.
+ * 
+ * Communication:
+ *   I2C (Slave)       - Receives temperature data from MEGA-1
+ *   SPI               - RFID and MAX7219 communication
+ * SYSTEM OPERATION:
+ * 1. Startup: Initializes all sensors, displays dual runway startup animation
+ * 2. Standby: Waits for I2C start signal from MEGA-1 flight computer
+ * 3. Active Mode: Begins monitoring after receiving temperature preference
+ * 4. Runway Monitoring: 
+ *    - Clear Pattern: Smooth scrolling centerline lights (safe to land)
+ *    - Warning Pattern: Alternating side lights (caution)
+ *    - Blocked Pattern: X pattern (runway obstructed)
+ *    - Conflict Pattern: Rapid flash (aircraft conflict)
+ * 5. Object Detection: Closes gate and activates fan when object detected
+ * 6. Aircraft Conflict: RFID detection triggers airspeed adjustment protocol
+ * 7. Radar Simulation: Continuous stepper rotation (180° sweeps)
+ * 8. Night Mode: Auto-adjusts temperature to 22°C, dims runway lights
+ * 
+ * RUNWAY LIGHT PATTERNS (Dual Synchronized MAX7219):
+ * CLEAR:      Scrolling centerline + steady edge lights (safe landing)
+ * WARNING:    Alternating left-right flash (aircraft approaching)
+ * BLOCKED:    X pattern flash (obstacle on runway)
+ * CONFLICT:   All lights rapid flash (traffic conflict alert)
+ * CLOSED:     Horizontal bars (runway not operational)
+ * 
+ * AIRCRAFT CONFLICT RESOLUTION:
+ * When RFID detects aircraft tag:
+ * 1. Alarm sounds, runway lights flash red conflict pattern
+ * 2. Gate closes, fan activates
+ * 3. LCD displays current airspeed (140 knots initially)
+ * 4. User rotates encoder to reduce airspeed to target (100 knots)
+ * 5. Conflict resolves when target airspeed reached
+ * 6. System returns to normal monitoring mode
+ * 
+ * ENVIRONMENTAL MONITORING:
+ * • Temperature/Humidity: Continuous DHT11 monitoring
+ * • Motion Detection: PIR sensor triggers yellow LED indicators
+ * • Light Level: Photoresistor enables night mode below 100 ADC value
+ * • Object Distance: Ultrasonic sensor controls gate at 50cm threshold
+ * 
+ * SAFETY FEATURES:
+ *  Automatic gate closure when obstacles detected
+ *  Fan activation during alerts to increase visibility/awareness
+ *  Night mode with reduced brightness and temperature adjustment
+ *  Synchronized dual runway lights for extended runway visibility
+ *  Conflict alarm with multi-stage resolution protocol
+ * ============================================================================
+ */
 
 #include <LiquidCrystal.h>
 #include <Wire.h>
@@ -39,7 +93,7 @@ const int PHOTORESISTOR_PIN = A0;
 unsigned long lastUltrasonicCheck = 0;
 float smoothedDistance = 999.0;
 const float DISTANCE_FILTER_ALPHA = 0.3;
-const int OBJECT_THRESHOLD = 50;   // adjust as needed
+const int OBJECT_THRESHOLD = 50;   
 
 // RFID RC522 Module
 #define RST_PIN 49
@@ -139,7 +193,7 @@ bool stepperDirection = true;
 int runwayAnimFrame = 0;
 int runwayBrightness = 8;
 
-// Function declarations (add these before setup())
+// Function declarations
 void updateRunwayLights();
 void runwayStartupAnimation();
 void runwayClearPattern();
@@ -148,6 +202,8 @@ void runwayBlockedPattern();
 void runwayConflictPattern();
 void runwayClosed();
 void setRunwayBrightness(int brightness);
+
+
 // ============================================================================
 // SETUP
 // ============================================================================
@@ -156,7 +212,7 @@ void setup() {
   Wire.begin(8);
   Wire.onReceive(receiveFromMega1);
 
-  // Initialize BOTH MAX7219 Runway Lights
+  // Initializing BOTH MAX7219 Runway Lights
   Serial.println("Initializing MAX7219 Runway Lights (Module 1)...");
   runwayLights.begin();
   runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
@@ -246,7 +302,7 @@ void loop() {
     controlStepperContinuous();
   }
 
-  // Update BOTH runway lights with synchronized patterns
+  // Update BOTH runway lights patterns
   updateRunwayLights();
 
   if (millis() - lastDisplayUpdate > 1000) {
@@ -261,7 +317,7 @@ void loop() {
 }
 
 // ============================================================================
-// MAX7219 DUAL RUNWAY LIGHT FUNCTIONS (SYNCHRONIZED)
+// MAX7219 DUAL RUNWAY LIGHT FUNCTIONS
 // ============================================================================
 
 void runwayStartupAnimation() {
@@ -301,7 +357,7 @@ void updateRunwayLights() {
   if (millis() - lastRunwayUpdate < updateInterval) return;
   lastRunwayUpdate = millis();
 
-  // Choose pattern based on state - BOTH modules show same pattern
+  
   if (conflictActive) {
     runwayConflictPattern();
   } else if (planeDetected) {
@@ -315,8 +371,8 @@ void updateRunwayLights() {
   runwayAnimFrame++;
   if (runwayAnimFrame > 7) runwayAnimFrame = 0;
 }
+
 // RUNWAY PATTERN: Clear for landing (smooth scroll)
-// RUNWAY PATTERN: Clear for landing (smooth scroll) - SYNCHRONIZED
 void runwayClearPattern() {
   runwayLights.clear();
   runwayLights2.clear();
@@ -325,7 +381,7 @@ void runwayClearPattern() {
   int offset = runwayAnimFrame;
 
   // Center column lights (runway centerline)
-  // Apply to BOTH modules simultaneously
+  // Apply to BOTH
   for (int row = 0; row < 8; row++) {
     // Center column lights (runway centerline)
     if ((row + offset) % 2 == 0) {
@@ -348,13 +404,11 @@ void runwayClearPattern() {
 }
 
 // RUNWAY PATTERN: Warning (alternating sides)
-// RUNWAY PATTERN: Warning (alternating sides) - SYNCHRONIZED
 void runwayWarningPattern() {
   runwayLights.clear();
   runwayLights2.clear();
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
   // Alternating left-right warning
-  // Alternating left-right warning on BOTH modules
   if (runwayAnimFrame % 2 == 0) {
     // Light up left side
     for (int row = 0; row < 8; row++) {
@@ -375,14 +429,12 @@ void runwayWarningPattern() {
 }
 
 // RUNWAY PATTERN: Blocked (X pattern)
-// RUNWAY PATTERN: Blocked (X pattern) - SYNCHRONIZED
 void runwayBlockedPattern() {
   runwayLights.clear();
   runwayLights2.clear();
 
   if (runwayAnimFrame % 2 == 0) {
     // Draw X pattern
-    // Draw X pattern on BOTH modules
     for (int i = 0; i < 8; i++) {
       runwayLights.setPoint(i, i, true);         // Top-left to bottom-right
       runwayLights.setPoint(i, 7 - i, true);     // Top-right to bottom-left
@@ -395,7 +447,6 @@ void runwayBlockedPattern() {
 }
 
 // RUNWAY PATTERN: Conflict (rapid flash all)
-// RUNWAY PATTERN: Conflict (rapid flash all) - SYNCHRONIZED
 void runwayConflictPattern() {
   if (runwayAnimFrame % 2 == 0) {
     // All lights ON
@@ -414,13 +465,11 @@ void runwayConflictPattern() {
 }
 
 // RUNWAY PATTERN: Closed (horizontal bars)
-// RUNWAY PATTERN: Closed (horizontal bars) - SYNCHRONIZED
 void runwayClosed() {
   runwayLights.clear();
   runwayLights2.clear();
 
   // Static horizontal bars (closed runway symbol)
-  // Static horizontal bars (closed runway symbol) on BOTH modules
   for (int col = 0; col < 8; col++) {
     runwayLights.setPoint(1, col, true);
     runwayLights.setPoint(3, col, true);
@@ -433,8 +482,7 @@ void runwayClosed() {
   }
 }
 
-// Adjust runway light brightness (call during night mode)
-// Adjust runway light brightness on BOTH modules
+// Adjust runway light brightness
 void setRunwayBrightness(int brightness) {
   runwayBrightness = constrain(brightness, 0, 15);
   runwayLights.control(MD_MAX72XX::INTENSITY, runwayBrightness);
@@ -565,7 +613,7 @@ void stopFan() {
 }
 
 // ============================================================================
-// PLANE CONFLICT HANDLING
+// PLANEE CONFLICT HANDLING
 // ============================================================================
 void playPlaneConflictAlarm() {
   for (int i = 0; i < 8; i++) {
@@ -619,7 +667,7 @@ void checkRotaryEncoder() {
 void resolveConflict() {
   conflictResolved = true;
   conflictActive = false;
-  planeDetected = false;  // ADD THIS LINE to reset plane detection
+  planeDetected = false;  //reset plane detection
   
   Serial.println("\nCONFLICT RESOLVED!");
   Serial.print("Final Airspeed: ");
@@ -641,6 +689,7 @@ void resolveConflict() {
   lcd.print(" kts");
   delay(3000);
 }
+
 // ============================================================================
 // ULTRASONIC + RFID DETECTION
 // ============================================================================
@@ -1054,7 +1103,7 @@ void sendStatus() {
   Serial.print(currentTemp,1);
   Serial.print("°C  (Preferred: ");
   Serial.print(preferredTemp,1);
-  Serial.println("°C)");   //put the hex code for degree like one of the labs
+  Serial.println("°C)");  
 
   Serial.print("Humidity: ");
   Serial.print(currentHumidity,0);
