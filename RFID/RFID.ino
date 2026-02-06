@@ -38,7 +38,7 @@ void setup() {
   // Test 1: SPI Initialization
   Serial.println("TEST 1: Initializing SPI...");
   SPI.begin();
-  Serial.println("✓ SPI initialized successfully");
+  Serial.println(" SPI initialized successfully");
   Serial.println();
   
   delay(500);
@@ -56,7 +56,7 @@ void setup() {
   Serial.println(version, HEX);
   
   if (version == 0x00 || version == 0xFF) {
-    Serial.println("❌ ERROR: Cannot communicate with RC522!");
+    Serial.println(" ERROR: Cannot communicate with RC522!");
     Serial.println();
     Serial.println("TROUBLESHOOTING:");
     Serial.println("1. Check all wiring connections");
@@ -73,8 +73,8 @@ void setup() {
     Serial.println();
     moduleInitialized = false;
   } else {
-    Serial.println("✓ RC522 communication OK!");
-    Serial.print("✓ Chip version: ");
+    Serial.println(" RC522 communication OK!");
+    Serial.print(" Chip version: ");
     
     // Identify chip version
     switch(version) {
@@ -107,22 +107,22 @@ void setup() {
   delay(100);
   
   if (selfTestResult) {
-    Serial.println("✓ Self-test PASSED");
+    Serial.println("Self-test PASSED");
   } else {
-    Serial.println("⚠ Self-test returned false (this is sometimes normal)");
+    Serial.println("Self-test returned false (this is sometimes normal)");
   }
   Serial.println();
   
   // Ready message
   Serial.println("════════════════════════════════════════════════════");
   if (moduleInitialized) {
-    Serial.println("✓✓✓ RC522 MODULE IS READY! ✓✓✓");
+    Serial.println(" RC522 MODULE IS READY! ");
     Serial.println();
     Serial.println("NOW TESTING CARD DETECTION...");
     Serial.println("Place your RFID card/tag near the reader");
     Serial.println("════════════════════════════════════════════════════");
   } else {
-    Serial.println("❌❌❌ RC522 MODULE FAILED TO INITIALIZE ❌❌❌");
+    Serial.println(" RC522 MODULE FAILED TO INITIALIZE ");
     Serial.println("Please fix wiring and reset Arduino");
     Serial.println("════════════════════════════════════════════════════");
   }
@@ -138,7 +138,7 @@ void loop() {
   if (!moduleInitialized) {
     // Module not working, just wait
     delay(1000);
-    Serial.println("⚠ Module not initialized. Check wiring and reset.");
+    Serial.println("Module not initialized. Check wiring and reset.");
     return;
   }
   
@@ -152,16 +152,16 @@ void loop() {
     if (rfid.PICC_IsNewCardPresent()) {
       Serial.println();
       Serial.println("═══════════════════════════════════════════");
-      Serial.println("🔍 CARD DETECTED! Attempting to read...");
+      Serial.println(" CARD DETECTED! Attempting to read...");
       
       if (rfid.PICC_ReadCardSerial()) {
         successfulReads++;
         
-        Serial.println("✓✓✓ CARD READ SUCCESSFUL! ✓✓✓");
+        Serial.println(" CARD READ SUCCESSFUL! ");
         Serial.println();
         
         // Display UID
-        Serial.print("📇 Card UID: ");
+        Serial.print(" Card UID: ");
         for (byte i = 0; i < rfid.uid.size; i++) {
           if (rfid.uid.uidByte[i] < 0x10) Serial.print("0");
           Serial.print(rfid.uid.uidByte[i], HEX);
@@ -170,7 +170,7 @@ void loop() {
         Serial.println();
         
         // Display UID in decimal
-        Serial.print("📇 Card UID (DEC): ");
+        Serial.print(" Card UID (DEC): ");
         for (byte i = 0; i < rfid.uid.size; i++) {
           Serial.print(rfid.uid.uidByte[i]);
           if (i < rfid.uid.size - 1) Serial.print(":");
@@ -178,18 +178,18 @@ void loop() {
         Serial.println();
         
         // Display card type
-        Serial.print("📋 Card Type: ");
+        Serial.print(" Card Type: ");
         MFRC522::PICC_Type piccType = rfid.PICC_GetType(rfid.uid.sak);
         Serial.println(rfid.PICC_GetTypeName(piccType));
         
         // Display SAK
-        Serial.print("🔐 SAK: 0x");
+        Serial.print(" SAK: 0x");
         Serial.println(rfid.uid.sak, HEX);
         
         Serial.println();
-        Serial.print("✓ Total Successful Reads: ");
+        Serial.print(" Total Successful Reads: ");
         Serial.println(successfulReads);
-        Serial.print("✗ Total Failed Reads: ");
+        Serial.print(" Total Failed Reads: ");
         Serial.println(failedReads);
         Serial.println("═══════════════════════════════════════════");
         Serial.println();
@@ -203,7 +203,7 @@ void loop() {
       } else {
         failedReads++;
         Serial.println();
-        Serial.println("✗ Failed to read card serial");
+        Serial.println(" Failed to read card serial");
         Serial.print("Failed reads: ");
         Serial.println(failedReads);
       }
