@@ -24,6 +24,7 @@
 
 
 #include <TFT_eSPI.h>
+#include "airplane.h"
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -39,10 +40,13 @@ TFT_eSPI tft = TFT_eSPI();
 #define JOY_RIGHT 21
 #define JOY_PRESS 12
 
+#define PLANE_W   50
+#define PLANE_H   50
+
 // position
-int playerX = 120;
-int playerY = 120;
-int speed = 8;        // how many pixels it moves per step
+int playerX = 120 - PLANE_W / 2;
+int playerY = 120 - PLANE_H / 2;
+int speed = 5;        // how many pixels it moves per step
 
 void setup() {
   pinMode(15, OUTPUT);
@@ -64,15 +68,16 @@ void setup() {
   pinMode(JOY_PRESS, INPUT_PULLUP);
 
   // Draw initial asterisk
-  drawPlayer(playerX, playerY, TFT_WHITE);
+  //drawPlayer(playerX, playerY, TFT_WHITE);
+   tft.pushImage(playerX, playerY, PLANE_W, PLANE_H, airplane);
 }
 
-void drawPlayer(int x, int y, uint16_t color) {
+/*void drawPlayer(int x, int y, uint16_t color) {
   tft.setTextSize(3);
   tft.setTextColor(color);
   tft.setCursor(x, y);
   tft.print("*");
-}
+}*/
 
 void loop() {
   int newX = playerX;
@@ -90,14 +95,17 @@ void loop() {
   // Only redraw if position changed
   if (newX != playerX || newY != playerY) {
     // Erase old position
-    drawPlayer(playerX, playerY, TFT_BLACK);
+    //drawPlayer(playerX, playerY, TFT_BLACK);
+    tft.fillRect(playerX, playerY, PLANE_W, PLANE_H, TFT_BLACK);
+
 
     // Update position
     playerX = newX;
     playerY = newY;
 
     // Draw new position
-    drawPlayer(playerX, playerY, TFT_WHITE);
+   // drawPlayer(playerX, playerY, TFT_WHITE);
+   tft.pushImage(playerX, playerY, PLANE_W, PLANE_H, airplane);
   }
 
   delay(50); // controls movement speed
