@@ -24,7 +24,7 @@
 
 
 #include <TFT_eSPI.h>
-#include "plane_image.h"
+#include "airplane.h"
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -96,6 +96,7 @@ void restartGame() {
   tft.fillScreen(TFT_BLACK);
   tft.pushImage(playerX, playerY, PLANE_W, PLANE_H, airplane);
 }
+
 
 void showPause() {
   tft.fillScreen(TFT_BLACK);
